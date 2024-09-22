@@ -10,8 +10,8 @@ llm:Qwen2-Alibaba
 银狼语音模型数据集来源:红血球AE3803
 一些程序由ChatGPT-3.5生成
 v2-增加了图形化界面
-计划：
 v2.1-优化图形界面
+计划：
 v3-使用LoRA微调
 '''
 
@@ -48,6 +48,8 @@ current_path = os.path.abspath(os.path.dirname(__file__))
 print(f"正在{current_path}运行")
 
 
+
+
 class FloatingWindow(QtWidgets.QWidget):
 
     def __init__(self):
@@ -68,18 +70,23 @@ class FloatingWindow(QtWidgets.QWidget):
         self.container.setAttribute(QtCore.Qt.WA_TranslucentBackground)
 
         self.image_label = QtWidgets.QLabel(self.container)
-        pixmap = QtGui.QPixmap(f"{current_path}/lib/SilverWolfpng.png").scaled(600, 400, QtCore.Qt.KeepAspectRatio)
+        pixmap = QtGui.QPixmap(f"{current_path}/lib/bg.png").scaled(600, 400, QtCore.Qt.KeepAspectRatio)
         self.image_label.setPixmap(pixmap)
+        
         self.image_label.setGeometry(0, 0, 600, 400)
 
         # 输入框和按钮布局
         input_layout = QtWidgets.QVBoxLayout(self.container)
-        input_layout.setContentsMargins(300, 0, 0, 0)
+        input_layout.setContentsMargins(300, 49, 30, 20)
 
+        font = QtGui.QFont()
+        font.setFamily("Unifont")
+        font.setPointSize(13)
         self.text_area = QtWidgets.QTextEdit(self.container)
         self.text_area.setReadOnly(True)
         self.text_area.setStyleSheet("background: rgba(255, 255, 255, 150);")
         self.text_area.setGeometry(0, 0, 600, 350)
+        self.text_area.setFont(font)
         input_layout.addWidget(self.text_area)
 
         sendlayout = QtWidgets.QHBoxLayout()
@@ -144,7 +151,6 @@ def model_thread_function():
     model_format = "mlx"
     model_engine="MLX"
     quantization = "4-bit"
-    base_url = 'http://127.0.0.1:9880'
     with open(f"{current_path}/lib/prompt.txt", 'r') as file:
         indexprompt = file.read()
 
@@ -174,7 +180,7 @@ def model_thread_function():
     )
     content = completion["choices"][0]["message"]["content"]
     print(f"{model_name}: {content}")
-    output_queue.put(f"银狼: {content}")
+    output_queue.put(f"{content}")
     chat_history.append(ChatCompletionMessage(role="user", content=prompt))
     chat_history.append(ChatCompletionMessage(role="assistant", content=content))
     while True:

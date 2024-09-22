@@ -20,14 +20,16 @@ import re
 import os
 import queue
 import simpleaudio as sa
+'''
+conda activate xinference
+xinference-local --host 0.0.0.0 --port 9997
+/Users/ycc/workspace/Chat/GPT-SoVITS/go-api.command ; exit;
+/usr/bin/python3 /Users/ycc/workspace/Chat/collection/main.py 
 
-#conda activate xinference
-#xinference-local --host 0.0.0.0 --port 9997
-#/Users/ycc/workspace/Chat/GPT-SoVITS/go-api.command ; exit;
-#/usr/bin/python3 /Users/ycc/workspace/Chat/collection/main.py 
+改变模型:config.py和Chat/GPT-SoVITS/GPT_SoVITS/configs/tts_infer.yaml
+/Users/ycc/workspace/Chat/GPT-SoVITS/go-webui.command ; exit;
+'''
 
-#改变模型:config.py和Chat/GPT-SoVITS/GPT_SoVITS/configs/tts_infer.yaml
-#/Users/ycc/workspace/Chat/GPT-SoVITS/go-webui.command ; exit;
 current_path = os.path.abspath(os.path.dirname(__file__))
 print(f"正在{current_path}运行")
 
