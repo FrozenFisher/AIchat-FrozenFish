@@ -12,7 +12,8 @@ llm:Qwen2-Alibaba
 v2-增加了图形化界面
 v2.1-优化图形界面
 计划：
-v3-使用LoRA微调
+v3-加入模型切换功能（使用GPT-Sovits api）
+v4-使用LoRA微调
 '''
 
 
