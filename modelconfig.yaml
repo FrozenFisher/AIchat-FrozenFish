@@ -1,0 +1,13 @@
+Agents:
+  银狼:
+    GPTPath: GPT_weights_v2/银狼-e10.ckpt
+    SoVITSPath: SoVITS_weights_v2/银狼_e15_s480.pth
+    bgPath: lib/bg/bgSilverWolf.png
+    promptPath: lib/prompt/promptSilverWolf.txt
+    refaudioPath: lib/参考音频/说话-该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav
+  温迪:
+    GPTPath: GPT_weights_v2/温迪-e10.ckpt
+    SoVITSPath: SoVITS_weights_v2/温迪_e10_s1170.pth
+    bgPath: lib/bg/bgVenti.png
+    promptPath: lib/prompt/promptVenti.txt
+    refaudioPath: lib/参考音频/他曾经与我一同聆听风的歌唱，一同弹奏蒲公英的诗篇.wav

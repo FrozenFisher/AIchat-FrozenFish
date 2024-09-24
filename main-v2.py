@@ -1,7 +1,7 @@
 
 
 '''
-作者:Mcqueen_yang
+作者:Mcqueen_yang(FrozenFisher)
 特别鸣谢：
 llm:Qwen2-Alibaba
 框架:Xinference
