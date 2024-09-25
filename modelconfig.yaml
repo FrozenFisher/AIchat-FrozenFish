@@ -11,3 +11,9 @@ Agents:
     bgPath: lib/bg/bgVenti.png
     promptPath: lib/prompt/promptVenti.txt
     refaudioPath: lib/参考音频/他曾经与我一同聆听风的歌唱，一同弹奏蒲公英的诗篇.wav
+  流萤:
+    GPTPath: GPT_weights_v2/流萤-e10.ckpt
+    SoVITSPath: SoVITS_weights_v2/流萤_e15_s810.pth
+    bgPath: lib/bg/bgFireFly.png
+    promptPath: lib/prompt/promptFireFly.txt
+    refaudioPath: lib/参考音频/说话-因为你身上别着星穹列车的徽章呀，我在大银幕上见过！.wav

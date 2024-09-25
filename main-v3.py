@@ -5,18 +5,18 @@
 特别鸣谢：
 llm:Qwen2-Alibaba
 框架:Xinference
-实时语音:GPT-Sovits
+实时语音:GPT-Sovits(bilibili@花儿不哭https://space.bilibili.com/5760446/)
 由PyQt5提供GUI支持
-语音模型作者与Sovits api作者:白菜工厂1145号员工
+语音模型作者与GSV api作者:bilibili@白菜工厂1145号员工https://space.bilibili.com/518098961
 语音模型数据集来源:红血球AE3803
 一些程序由ChatGPT-3.5生成
 
 v2-增加了图形化界面
 v2.1-优化图形界面
 v3.0-加入设置界面
-v3.1-加入模型切换功能（使用GPT-Sovits api）
-计划：
+v3.1-加入模型切换功能（使用GPT-SoVITS apiv2）
 v3.2-丰富模型
+计划：
 v4-使用LoRA微调
 '''
 
@@ -28,6 +28,7 @@ from pydub import AudioSegment
 
 import simpleaudio as sa
 from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtGui import QColor
 
 '''启动:
 conda activate xinference
@@ -118,14 +119,16 @@ class FloatingWindow(QtWidgets.QWidget):
         firstButtonLayout = QtWidgets.QHBoxLayout(self.container)
         #切换按钮
         self.setButton = QtWidgets.QLabel(self.container)
-        self.setButton.setStyleSheet("color: #FFFFFF; font-family: Unifont; font-size: 16pt;")
+        self.setButton.setStyleSheet("color: black; font-family: Unifont; font-size: 16pt;")
         self.setButton.setText("设置")
         self.setButton.setGeometry(310, 25, 50, 24)
         firstButtonLayout.addWidget(self.setButton)
         self.setButton.raise_()
         
+        
         #事件
         self.input_box.setDisabled(True)
+        self.setButton.setDisabled(True)
 
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_text_area)
@@ -135,6 +138,8 @@ class FloatingWindow(QtWidgets.QWidget):
         self.wheshowSet = False
         
         self.setButton.mousePressEvent = lambda event: self.showSettings(event)
+        
+        self.update_button_color()
 
     #移动浮窗
     def mousePressEvent(self, event):
@@ -158,6 +163,7 @@ class FloatingWindow(QtWidgets.QWidget):
             self.textArea.append("You: " + message)
             self.input_box.clear()
             self.input_box.setDisabled(True)
+            self.setButton.setDisabled(True)
             input_queue.put(message)
 
     def update_text_area(self):
@@ -166,6 +172,7 @@ class FloatingWindow(QtWidgets.QWidget):
                 result = output_queue.get_nowait()
                 self.textArea.append(result)
                 self.input_box.setDisabled(False)
+                self.setButton.setDisabled(False)
         except queue.Empty:
             pass
     
@@ -175,6 +182,37 @@ class FloatingWindow(QtWidgets.QWidget):
         self.setting_window = SettingWindow(self)
         self.setting_window.show()
     
+    def update_button_color(self):
+        # 加载背景图像并计算平均颜色
+        pixmap = QtGui.QPixmap(f"{bgPath}")
+        # 获取图像的宽高
+        widthin = 310
+        widthout = 360
+        heightin = 25
+        heightout = 49
+        # 将图像转换为 QImage，以便访问像素数据
+        image = pixmap.toImage()
+        r_total = g_total = b_total = 0
+        for x in range(widthin, widthout):
+            for y in range(heightin, heightout):
+                color = QColor(image.pixel(x, y))
+                r_total += color.red()
+                g_total += color.green()
+                b_total += color.blue()
+        pixel_count = (widthout-widthin) * (heightout-heightin)
+        # 计算平均 RGB 值
+        avg_r = r_total // pixel_count
+        avg_g = g_total // pixel_count
+        avg_b = b_total // pixel_count
+        # 根据平均亮度判断字体颜色
+        brightness = (avg_r * 299 + avg_g * 587 + avg_b * 114) // 1000
+        if brightness > 128:  # 如果较暗，使用白色字体
+            self.setButton.setStyleSheet("color: white; font-family: Unifont; font-size: 16pt; ")
+            print("当前模式：暗")
+
+        else:  # 如果较亮，使用黑色字体
+            self.setButton.setStyleSheet("color: black; font-family: Unifont; font-size: 16pt; ")
+            print("当前模式：亮")
 class SettingWindow(QtWidgets.QWidget):
     def __init__(self, parent=None):
 
@@ -197,7 +235,7 @@ class SettingWindow(QtWidgets.QWidget):
         self.top_layout.setContentsMargins(0, 20, 20, 0)
         self.top_layout.addStretch()
         self.label = QtWidgets.QLabel("设置-切换模型")
-        self.label.setStyleSheet("color: #FFFFFF; font-family: Unifont; font-size: 15pt;")
+        self.label.setStyleSheet("color: black; font-family: Unifont; font-size: 15pt;")
         self.top_layout.addWidget(self.label)
         self.layout.addLayout(self.top_layout)
 
@@ -318,38 +356,45 @@ class SettingWindow(QtWidgets.QWidget):
         self.deleteLater()
 
     def apply(self):
-        self.parent().imageLabel.setPixmap(QtGui.QPixmap(bgPath).scaled(600, 400, QtCore.Qt.KeepAspectRatio))
-        print("调用get请求")
-        url = "http://127.0.0.1:9880/set_gpt_weights"
-        params = {"weights_path": GPTPathin}
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            print(f"设置 GPT 权重成功：{GPTPathin}")
-        else:
-            try:
-                error_info = response.json()
-                print(f"设置 GPT 权重失败：{error_info}")
-            except Exception as e:
-                print(f"设置 GPT 权重失败：{response.text}")
-            return False
-        
-        url = "http://127.0.0.1:9880/set_sovits_weights"
-        params = {"weights_path": SoVITSPathin}
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            print(f"设置 SoVITS 权重成功：{GPTPathin}")
-        else:
-            try:
-                error_info = response.json()
-                print(f"设置 SoVITS 权重失败：{error_info}")
-            except Exception as e:
-                print(f"设置 SoVITS 权重失败：{response.text}")
-            return False
         with open(f"{promptPath}", 'r') as file:
             chindexprompt = file.read()
         input_queue.put(chindexprompt)
+        self.parent().input_box.setDisabled(True)
+        self.parent().imageLabel.setPixmap(QtGui.QPixmap(bgPath).scaled(600, 400, QtCore.Qt.KeepAspectRatio))
         self.parent().textArea.clear()
+        self.parent().update_button_color()
+
+        print("尝试调用api更改")
+        try:
+            url = "http://127.0.0.1:9880/set_gpt_weights"
+            params = {"weights_path": GPTPathin}
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                print(f"设置 GPT 权重成功：{GPTPathin}")
+            else:
+                try:
+                    error_info = response.json()
+                    print(f"设置 GPT 权重失败：{error_info}")
+                except Exception as e:
+                    print(f"设置 GPT 权重失败：{response.text}")
+            
+            url = "http://127.0.0.1:9880/set_sovits_weights"
+            params = {"weights_path": SoVITSPathin}
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                print(f"设置 SoVITS 权重成功：{GPTPathin}")
+            else:
+                try:
+                    error_info = response.json()
+                    print(f"设置 SoVITS 权重失败：{error_info}")
+                except Exception as e:
+                    print(f"设置 SoVITS 权重失败：{response.text}")
+        except:
+            print("调用api更改失败")
+
+
         print(f"当前GPT路径{GPTPath},Soviets路径{SoVITSPath},背景路径{bgPath},prompt路径{promptPath},参考音频路径{refaudioPath}")
+        self.close()
 
        
 
@@ -407,68 +452,69 @@ def model_thread_function():
         output_queue.put(f"{Agent}: {content}")
         chat_history.append(ChatCompletionMessage(role="user", content=prompt))
         chat_history.append(ChatCompletionMessage(role="assistant", content=content))
-        
-        print("生成音频中")
-        text = content
-        textlist = re.findall(r'[^,.!?;:，。！？：；]*[,.!?;:，。！？：；]*', text)
-        textlist = [part for part in textlist if part.strip()]
-                # 创建一个共享的队列
-        shared_queue = queue.Queue()
+        print("尝试生成音频")
+        try:
+            text = content
+            textlist = re.findall(r'[^,.!?;:，。！？：；]*[,.!?;:，。！？：；]*', text)
+            textlist = [part for part in textlist if part.strip()]
+                    # 创建一个共享的队列
+            shared_queue = queue.Queue()
 
-        def textToVoiceProducer(textlist, shared_queue):
-            for i in range(0, len(textlist)):
-                base_url = 'http://127.0.0.1:9880/tts'
+            def textToVoiceProducer(textlist, shared_queue):
+                for i in range(0, len(textlist)):
+                    base_url = 'http://127.0.0.1:9880/tts'
 
-                # 推理 - 使用执行参数指定的参考音频（POST 请求）
-                post_data = {
-                    "prompt_text": "该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。",
-                    "prompt_lang": "zh",
-                    "ref_audio_path": f"{refaudioPath}",
-                    "text": textlist[i],
-                    "text_lang": "zh",
-                }
-                response = requests.post(base_url, json=post_data)
-                if response.status_code == 200:
-                    print("produced " + textlist[i])
-                    # 生成文件名
-                    filename = f"{i}.wav"
+                    # 推理 - 使用执行参数指定的参考音频（POST 请求）
+                    post_data = {
+                        "prompt_text": "该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。",
+                        "prompt_lang": "zh",
+                        "ref_audio_path": f"{refaudioPath}",
+                        "text": textlist[i],
+                        "text_lang": "zh",
+                    }
+                    response = requests.post(base_url, json=post_data)
+                    if response.status_code == 200:
+                        print("produced " + textlist[i])
+                        # 生成文件名
+                        filename = f"{i}.wav"
+                        file_path = os.path.join(f"{current_path}/temp/", filename)
+                        with open(file_path, 'wb') as audio_file:
+                            audio_file.write(response.content)
+                        # 将文件名放入队列
+                        shared_queue.put(filename)
+                    else:
+                        # 处理错误
+                        print(f"错误: {response.status_code}, {response.text}")
+                # 标记生产线程结束
+                shared_queue.put(None)
+
+            def Voice(shared_queue):
+                while True:
+                    # 从队列中获取文件名
+                    filename = shared_queue.get()
+                    if filename is None:
+                        # 如果接收到 None，表示生产线程已经结束
+                        break
                     file_path = os.path.join(f"{current_path}/temp/", filename)
-                    with open(file_path, 'wb') as audio_file:
-                        audio_file.write(response.content)
-                    # 将文件名放入队列
-                    shared_queue.put(filename)
-                else:
-                    # 处理错误
-                    print(f"错误: {response.status_code}, {response.text}")
-            # 标记生产线程结束
-            shared_queue.put(None)
+                    audio = AudioSegment.from_file(file_path)
+                    play_obj = sa.play_buffer(audio.raw_data, num_channels=audio.channels, bytes_per_sample=audio.sample_width, sample_rate=audio.frame_rate)
+                    play_obj.wait_done()
+                    os.remove(file_path)
 
-        def Voice(shared_queue):
-            while True:
-                # 从队列中获取文件名
-                filename = shared_queue.get()
-                if filename is None:
-                    # 如果接收到 None，表示生产线程已经结束
-                    break
-                file_path = os.path.join(f"{current_path}/temp/", filename)
-                audio = AudioSegment.from_file(file_path)
-                play_obj = sa.play_buffer(audio.raw_data, num_channels=audio.channels, bytes_per_sample=audio.sample_width, sample_rate=audio.frame_rate)
-                play_obj.wait_done()
-                os.remove(file_path)
+            # 启动生产线程
+            producer_thread = threading.Thread(target=textToVoiceProducer, args=(textlist, shared_queue))
+            producer_thread.start()
 
-        # 启动生产线程
-        producer_thread = threading.Thread(target=textToVoiceProducer, args=(textlist, shared_queue))
-        producer_thread.start()
+            # 启动消费线程
+            consumer_thread = threading.Thread(target=Voice, args=(shared_queue,))
+            consumer_thread.start()
 
-        # 启动消费线程
-        consumer_thread = threading.Thread(target=Voice, args=(shared_queue,))
-        consumer_thread.start()
-
-        # 等待生产线程结束
-        producer_thread.join()
-        # 等待消费线程结束
-        consumer_thread.join()
-        
+            # 等待生产线程结束
+            producer_thread.join()
+            # 等待消费线程结束
+            consumer_thread.join()
+        except:
+            print("音频生成失败，当前仅能进行对话")
 
 
 if __name__ == "__main__":
