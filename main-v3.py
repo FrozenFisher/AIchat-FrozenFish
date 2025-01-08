@@ -10,11 +10,13 @@ llm:Qwen2-Alibaba
 语音模型数据集来源:红血球AE3803
 一些程序由ChatGPT-3.5生成
 
+v1-大模型对话与语音
 v2-增加了图形化界面
 v2.1-优化图形界面
 v3.0-加入设置界面
 v3.1-加入模型切换功能（使用GPT-SoVITS apiv2）
 v3.2-丰富模型
+v3.2.1-qf-修复问题
 计划：
 v4-使用LoRA微调
 '''
@@ -63,12 +65,12 @@ GPTPath = f"{os.path.dirname(current_path)}/GPT-SoVITS/GPT_weights_v2/银狼-e10
 SoVITSPath = f"{os.path.dirname(current_path)}/GPT-SoVITS/SoVITS_weights_v2/银狼_e15_s480.pth"
 bgPath = f"{current_path}/lib/bg/bgSilverWolf.png"
 promptPath = f"{current_path}/lib/prompt/promptSilverWolf.txt"
-refaudioPath = f"{current_path}/lib/参考音频/说话-该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav"
+refaudioPath = f"{current_path}/lib/参考音频/该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav"
 GPTPathin = f"GPT_weights_v2/银狼-e10.ckpt"
 SoVITSPathin = f"SoVITS_weights_v2/银狼_e15_s480.pth"
 bgPathin = f"lib/bg/bgSilverWolf.png"
 promptPathin = f"lib/prompt/promptSilverWolf.txt"
-refaudioPathin = f"lib/参考音频/说话-该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav"
+refaudioPathin = f"lib/参考音频/该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav"
 
 
 class FloatingWindow(QtWidgets.QWidget):
@@ -327,8 +329,8 @@ class SettingWindow(QtWidgets.QWidget):
         self.layout.addLayout(self.left_layout)
 
     def freshPath(self):
-        global Agent, GPTPath, SoVITSPath, bgPath, promptPath
-        global GPTPathin, SoVITSPathin, bgPathin, promptPathin
+        global Agent, GPTPath, SoVITSPath, bgPath, promptPath, refaudioPath
+        global GPTPathin, SoVITSPathin, bgPathin, promptPathin, refaudioPathin
         if Agent == "userinput":
             pass
         else:
@@ -470,8 +472,7 @@ def model_thread_function():
     print(f"{model_name}: {content}")
     output_queue.put(f"{content}")
     chat_history.append(ChatCompletionMessage(role="user", content=prompt))
-    chat_history.append(ChatCompletionMessage(
-        role="assistant", content=content))
+    chat_history.append(ChatCompletionMessage(role="assistant", content=content))
     # 默认prompt设定,endl
 
 
@@ -486,8 +487,7 @@ def model_thread_function():
         print(f"{model_name}: {content}")
         output_queue.put(f"{Agent}: {content}")
         chat_history.append(ChatCompletionMessage(role="user", content=prompt))
-        chat_history.append(ChatCompletionMessage(
-            role="assistant", content=content))
+        chat_history.append(ChatCompletionMessage(role="assistant", content=content))
         print("尝试生成音频")
         try:
             text = content
@@ -499,7 +499,7 @@ def model_thread_function():
             def textToVoiceProducer(textlist, shared_queue):
                 basename = os.path.basename(refaudioPath)
                 reftext, extension = os.path.splitext(basename)
-                print(reftext)
+                print(f"参考音频文本:{reftext}")
                 for i in range(0, len(textlist)):
                     base_url = 'http://127.0.0.1:9880/tts'
                     # 推理 - 使用执行参数指定的参考音频（POST 请求）

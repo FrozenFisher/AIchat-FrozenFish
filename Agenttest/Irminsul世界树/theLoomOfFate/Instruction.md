@@ -1,0 +1,1 @@
+Irminsul世界树，是该大模型的记忆向量数据库系统，以Chroma为基础，以theLoomOfFate命运的织机，作为管理器

@@ -67,7 +67,7 @@ if __name__ == "__main__":
         chat_history: List["ChatCompletionMessage"] = []
         prompt = indexprompt
         completion = model.chat(
-            prompt=prompt,
+            prompt="test",
             chat_history=chat_history,
             generate_config={"max_tokens": 1024},
         )
