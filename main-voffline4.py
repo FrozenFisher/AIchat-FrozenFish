@@ -1,4 +1,11 @@
 
+"""
+现在因为apply方法的更新导致显示框的是否允许输入的逻辑出了问题
+记的修复一下
+PanXin的bg和tts做一下
+"""
+
+
 '''
 作者:Mcqueen_yang(FrozenFisher)
 特别鸣谢：
@@ -19,7 +26,8 @@ v3.2-丰富模型
 v3.2.1-qf-修复问题
 voffline4-重构，使用openai client
 计划：
-voffline4.1-Langchain Agent
+voffline4.1-agent
+
 '''
 
 import re
@@ -36,6 +44,7 @@ from pydub import AudioSegment
 import openai
 import tiktoken
 
+
 import simpleaudio as sa
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtGui import QColor
@@ -43,16 +52,27 @@ from PyQt5.QtGui import QColor
 '''
 启动:
 conda activate xinference
-xinference-local --host 0.0.0.0 --port 9997
+XINFERENCE_MODEL_SRC=modelscope xinference-local --host 0.0.0.0 --port 9997
 /Users/ycc/workspace/Chat/GPT-SoVITS/go-apiv2.command ; exit;
-/usr/bin/python3 /Users/ycc/workspace/Chat/collection/main-v3.py
+/usr/bin/python3 /Users/ycc/workspace/Chat/collection/main-voffline4.py
 
 /Users/ycc/workspace/Chat/GPT-SoVITS/go-webui.command ; exit;
 '''
 
+if sys.argv.__len__() > 1:
+    DEBUG_CONFIG = 1 if sys.argv[1] == "DEBUG" else None
+else:
+    DEBUG_CONFIG = None
+
+if DEBUG_CONFIG == 1:
+    print("DEBUGGING")
+else:
+    print("NORMAL")
 
 input_queue = queue.Queue()
 output_queue = queue.Queue()
+chat_history: List["ChatCompletionMessage"] = []
+model_uid = "none"
 
 current_path = os.path.abspath(os.path.dirname(__file__))
 print(f"正在{current_path}运行")
@@ -390,7 +410,6 @@ class SettingWindow(QtWidgets.QWidget):
         self.deleteLater()
 
     def changeModel(self):
-        print("尝试调用api更改")
         try:
             url = "http://127.0.0.1:9880/set_gpt_weights"
             params = {"weights_path": GPTPathin}
@@ -417,25 +436,28 @@ class SettingWindow(QtWidgets.QWidget):
                     print(f"设置 SoVITS 权重失败：{response.text}")
         except:
             print("调用api更改失败")
-
-        print(
-            f"当前GPT路径{GPTPath},Soviets路径{SoVITSPath},背景路径{bgPath},prompt路径{promptPath},参考音频路径{refaudioPath}")
+        if DEBUG_CONFIG == 1:
+            print(f"当前GPT路径{GPTPath},Soviets路径{SoVITSPath},背景路径{bgPath},prompt路径{promptPath},参考音频路径{refaudioPath}")
 
     def apply(self):
+        global chat_history
+
         with open(f"{promptPath}", 'r') as file:
             chindexprompt = file.read()
-        input_queue.put(chindexprompt)
+        chat_history = [ChatCompletionMessage(role="user", content=chindexprompt)]
+
         self.parent().input_box.setDisabled(True)
         self.parent().imageLabel.setPixmap(QtGui.QPixmap(
             bgPath).scaled(600, 400, QtCore.Qt.KeepAspectRatio))
         self.parent().textArea.clear()
         self.parent().update_button_color()
         self.changeModel()
+        self.parent().input_box.setDisabled(False)
         self.close()
 
 
 def model_thread_function():
-    global model_uid, client
+    global model_uid, Xinferenceclient, chat_history
     
     SettingWindow.freshPath(self=SettingWindow)
     SettingWindow.changeModel(self=SettingWindow)
@@ -445,7 +467,7 @@ def model_thread_function():
     model_size_in_billions = "7"
     model_format = "mlx"
     model_engine = "MLX"
-    quantization = "4-bit"
+    quantization = "4bit"
 
     print(f"Xinference endpoint: {endpoint}")
     print(f"Model Name: {model_name}")
@@ -453,15 +475,16 @@ def model_thread_function():
     print(f"Model Format: {model_format}")
     print(f"Quantization: {quantization}")
     # 启动大模型
-    client = Client(endpoint)
-    model_uid = client.launch_model(
+    Xinferenceclient = Client(endpoint)
+    model_uid = Xinferenceclient.launch_model(
         model_name=model_name,
         model_engine=model_engine,
         model_size_in_billions=model_size_in_billions,
         model_format=model_format,
         quantization=quantization,
     )
-    model = client.get_model(model_uid)
+    model = Xinferenceclient.get_model(model_uid)
+    print(f"successfully launched model{model_uid}")
     # 启动大模型,endl
 
     # 处理输入对话历史，确保不会超出令牌限制
@@ -474,10 +497,13 @@ def model_thread_function():
         return token_count
     def trim_history(messages):
         while count_tokens(messages) > TOKEN_LIMIT:
-            messages.pop(0)  # 删除最早的消息，直到令牌数在限制内
+            if messages.__len__ > 3:
+                messages.pop(1)  # 删除除系统消息外最早的消息，直到令牌数在限制内
+            else:
+                print("系统消息过长")
         return messages
 
-    chat_history: List["ChatCompletionMessage"] = []  # chathistory设定
+      # chathistory设定
     # 默认prompt设定
     with open(f"{current_path}/lib/prompt.txt", 'r') as file:
         indexprompt = file.read()
@@ -486,24 +512,28 @@ def model_thread_function():
 
     messages = [{"role": message["role"], "content": message["content"]} for message in chat_history]# 构建消息列表
     messages = trim_history(messages)# 调整对话历史，确保不会超过令牌限制
-    print(messages)
+    if DEBUG_CONFIG == 1:
+        print(messages)
 
     client = openai.Client(api_key="hahanothing", base_url="http://127.0.0.1:9997/v1")
 
     completion = client.chat.completions.create(
         model=model_uid,
         messages=messages,
-        max_tokens=32768
+        max_tokens=1024
     )
     content = completion.choices[0].message.content
     print(f"{model_name}: {content}")
     output_queue.put(f"{content}")
     chat_history.append(ChatCompletionMessage(role="assistant", content=content))
     # 默认prompt设定,endl
-    print(f"对话历史：{chat_history}")
+    if DEBUG_CONFIG == 1:
+        print(f"对话历史：{chat_history}")
 
     while True:
+        print("对话状态")
         prompt = input_queue.get()
+        print(f"获得prompt{prompt}")
         chat_history.append(ChatCompletionMessage(role="user", content=prompt))
         messages = [{"role": message["role"], "content": message["content"]} for message in chat_history]  # 构建消息列表
         messages = trim_history(messages)  # 调整对话历史，确保不会超过令牌限制
@@ -511,56 +541,66 @@ def model_thread_function():
         completion = client.chat.completions.create(
             model=model_uid,
             messages=messages,
-            max_tokens=32768
+            max_tokens=1024
         )
         content = completion.choices[0].message.content
-        print(f"对话历史：{chat_history}")
+        if DEBUG_CONFIG == 1:
+            print(f"对话历史：{chat_history}")
         print(f"{model_name}: {content}")
         output_queue.put(f"{Agent}: {content}")
         chat_history.append(ChatCompletionMessage(role="assistant", content=content))
 
 
-
-
-        print("尝试生成音频")
+        print("生成音频状态")
         try:
             text = content
-            textlist = re.findall(r'[^,.!?;:，。！？：；]*[,.!?;:，。！？：；]*', text)
-            textlist = [part for part in textlist if part.strip()]
-            # 创建一个共享的队列
+            text_without_round_brackets = re.sub(r'（.*?）|\(.*?\)', '', text)# 去除圆括号中的内容，包括半角和全角圆括号
+            textlist = re.findall(r'[^,.!?;:，。！？：；]*[,.!?;:，。！？：；]*', text_without_round_brackets)# 分割文本为句子
+            textlist = [part for part in textlist if part.strip()]# 去除空白的部分
             shared_queue = queue.Queue()
 
             def textToVoiceProducer(textlist, shared_queue):
-                basename = os.path.basename(refaudioPath)
-                reftext, extension = os.path.splitext(basename)
-                print(f"参考音频文本:{reftext}")
-                for i in range(0, len(textlist)):
-                    base_url = 'http://127.0.0.1:9880/tts'
-                    # 推理 - 使用执行参数指定的参考音频（POST 请求）
-                    post_data = {
-                        "prompt_text": reftext,
-                        "prompt_lang": "zh",
-                        "ref_audio_path": refaudioPath,
-                        "text": textlist[i],
-                        "text_lang": "zh",
-                    }
+                try:
+                    basename = os.path.basename(refaudioPath)
+                    reftext, extension = os.path.splitext(basename)
+                    print(f"参考音频文本:{reftext}")
+                    for i in range(0, len(textlist)):
+                        base_url = 'http://127.0.0.1:9880/tts'
+                        # 推理 - 使用执行参数指定的参考音频（POST 请求）
+                        post_data = {
+                            "prompt_text": reftext,
+                            "prompt_lang": "zh",
+                            "ref_audio_path": refaudioPath,
+                            "text": textlist[i],
+                            "text_lang": "zh",
+                        }
 
-                    response = requests.post(base_url, json=post_data)
-                    if response.status_code == 200:
-                        print("produced " + textlist[i])
-                        # 生成文件名
-                        filename = f"{i}.wav"
-                        file_path = os.path.join(
-                            f"{current_path}/temp/", filename)
-                        with open(file_path, 'wb') as audio_file:
-                            audio_file.write(response.content)
-                        # 将文件名放入队列
-                        shared_queue.put(filename)
-                    else:
-                        # 处理错误
-                        print(f"错误: {response.status_code}, {response.text}")
-                # 标记生产线程结束
-                shared_queue.put(None)
+                        response = requests.post(base_url, json=post_data)
+                        if response.status_code == 200:
+                            print("produced " + textlist[i])
+                            # 生成文件名
+                            filename = f"{i}.wav"
+                            file_path = os.path.join(
+                                f"{current_path}/temp/", filename)
+                            with open(file_path, 'wb') as audio_file:
+                                audio_file.write(response.content)
+                            # 将文件名放入队列
+                            shared_queue.put(filename)
+                        else:
+                            if DEBUG_CONFIG == 1:
+                                print(f"错误: {response.status_code}, {response.text}")
+                            else:
+                                print("无法生成音频,在开始时传入\"DEBUG_CONFIG=1\"以打印错误数据")
+                            shared_queue.put(None)
+                            break
+
+                    # 标记生产线程结束
+                    shared_queue.put(None)
+                except:
+                    print("tts服务器不存在")
+                    shared_queue.put(None)
+
+
 
             def Voice(shared_queue):
                 while True:
@@ -591,8 +631,11 @@ def model_thread_function():
             # 等待消费线程结束
             consumer_thread.join()
         except:
-            print("音频生成失败，当前仅能进行对话")
+            print("音频生成功能失效，当前仅能进行对话")
 
+def quit():
+    Xinferenceclient.terminate_model(model_uid)
+    print(f"successfully terminated model {model_uid}")
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
@@ -603,5 +646,6 @@ if __name__ == "__main__":
     model_thread.daemon = True
     model_thread.start()
 
-    app.aboutToQuit.connect(lambda: client.terminate_model(model_uid))
+    app.aboutToQuit.connect(lambda: quit())
+
     sys.exit(app.exec_())

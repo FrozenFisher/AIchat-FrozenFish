@@ -151,7 +151,7 @@ def model_thread_function():
     model_size_in_billions = "7"
     model_format = "mlx"
     model_engine="MLX"
-    quantization = "4-bit"
+    quantization = "4bit"
     with open(f"{current_path}/lib/prompt.txt", 'r') as file:
         indexprompt = file.read()
 

@@ -6,7 +6,7 @@ model_name = "qwen2-instruct"
 model_size_in_billions = "7"
 model_format = "mlx"
 model_engine = "MLX"
-quantization = "4-bit"
+quantization = "4bit"
 
 
 client = Client(endpoint)

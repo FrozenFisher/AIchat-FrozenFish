@@ -441,7 +441,7 @@ def model_thread_function():
     model_size_in_billions = "7"
     model_format = "mlx"
     model_engine = "MLX"
-    quantization = "4-bit"
+    quantization = "4bit"
 
     print(f"Xinference endpoint: {endpoint}")
     print(f"Model Name: {model_name}")
@@ -598,5 +598,5 @@ if __name__ == "__main__":
     model_thread.daemon = True
     model_thread.start()
 
-    app.aboutToQuit.connect(lambda: client.terminate_model(model_uid))
+    app.aboutToQuit.connect(lambda: Client.terminate_model(model_uid))
     sys.exit(app.exec_())
