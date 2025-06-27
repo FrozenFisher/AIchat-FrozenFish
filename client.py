@@ -10,7 +10,7 @@ PanXin的bg和tts做一下
 作者:Mcqueen_yang(FrozenFisher)
 特别鸣谢：
 llm:Qwen2-Alibaba
-框架:Xinference
+框架:Xinference,OpenAI
 实时语音:GPT-Sovits(bilibili@花儿不哭https://space.bilibili.com/5760446/)
 由PyQt5提供GUI支持
 语音模型作者与GSV api作者:bilibili@白菜工厂1145号员工https://space.bilibili.com/518098961
@@ -520,7 +520,8 @@ def model_thread_function():
     completion = client.chat.completions.create(
         model=model_uid,
         messages=messages,
-        max_tokens=1024
+        max_tokens=1024,
+        temperature=0.8,
     )
     content = completion.choices[0].message.content
     print(f"{model_name}: {content}")
@@ -541,7 +542,8 @@ def model_thread_function():
         completion = client.chat.completions.create(
             model=model_uid,
             messages=messages,
-            max_tokens=1024
+            max_tokens=1024,
+            temperature=0.8,
         )
         content = completion.choices[0].message.content
         if DEBUG_CONFIG == 1:
