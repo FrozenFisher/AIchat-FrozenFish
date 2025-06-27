@@ -1,653 +1,633 @@
-
 """
-现在因为apply方法的更新导致显示框的是否允许输入的逻辑出了问题
-记的修复一下
-PanXin的bg和tts做一下
+AI聊天客户端 - 只负责UI交互和音频播放
+通过RESTful API与server通信
 """
 
-
-'''
-作者:Mcqueen_yang(FrozenFisher)
-特别鸣谢：
-llm:Qwen2-Alibaba
-框架:Xinference,OpenAI
-实时语音:GPT-Sovits(bilibili@花儿不哭https://space.bilibili.com/5760446/)
-由PyQt5提供GUI支持
-语音模型作者与GSV api作者:bilibili@白菜工厂1145号员工https://space.bilibili.com/518098961
-语音模型数据集来源:红血球AE3803
-一些程序由ChatGPT-3.5生成
-
-v1-大模型对话与语音
-v2-增加了图形化界面
-v2.1-优化图形界面
-v3.0-加入设置界面
-v3.1-加入模型切换功能（使用GPT-SoVITS apiv2）
-v3.2-丰富模型
-v3.2.1-qf-修复问题
-voffline4-重构，使用openai client
-计划：
-voffline4.1-agent
-
-'''
-
-import re
-import yaml
 import os
-import queue
-import threading
 import sys
+import json
+import uuid
 import requests
-from typing import List, Any, Callable, Dict, ForwardRef, Iterable, List, Optional, Union
-from typing_extensions import Literal, NotRequired, TypedDict
-from xinference.client import Client
-from pydub import AudioSegment
-import openai
-import tiktoken
+import threading
+import queue
+import re
+import base64
+from typing import Optional, Dict, Any, List
+from pathlib import Path
 
-
-import simpleaudio as sa
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtGui import QColor
+from pydub import AudioSegment
+import simpleaudio as sa
 
-'''
-启动:
-conda activate xinference
-XINFERENCE_MODEL_SRC=modelscope xinference-local --host 0.0.0.0 --port 9997
-/Users/ycc/workspace/Chat/GPT-SoVITS/go-apiv2.command ; exit;
-/usr/bin/python3 /Users/ycc/workspace/Chat/collection/main-voffline4.py
+# 全局配置
+SERVER_URL = "http://127.0.0.1:8000"
+current_path = Path(__file__).parent
+session_id = str(uuid.uuid4())
+current_agent = "银狼"
 
-/Users/ycc/workspace/Chat/GPT-SoVITS/go-webui.command ; exit;
-'''
-
-if sys.argv.__len__() > 1:
-    DEBUG_CONFIG = 1 if sys.argv[1] == "DEBUG" else None
-else:
-    DEBUG_CONFIG = None
-
-if DEBUG_CONFIG == 1:
-    print("DEBUGGING")
-else:
-    print("NORMAL")
-
-input_queue = queue.Queue()
-output_queue = queue.Queue()
-chat_history: List["ChatCompletionMessage"] = []
-model_uid = "none"
-
-current_path = os.path.abspath(os.path.dirname(__file__))
-print(f"正在{current_path}运行")
-
-
-with open(f'{current_path}/modelconfig.yaml', 'r') as file:
-    config = yaml.safe_load(file)
-Agentlist = list(config['Agents'].keys())
-Agentlist.append("userinput")
-
-Agent = "银狼"
-GPTPath = f"{os.path.dirname(current_path)}/GPT-SoVITS/GPT_weights_v2/银狼-e10.ckpt"
-SoVITSPath = f"{os.path.dirname(current_path)}/GPT-SoVITS/SoVITS_weights_v2/银狼_e15_s480.pth"
-bgPath = f"{current_path}/lib/bg/bgSilverWolf.png"
-promptPath = f"{current_path}/lib/prompt/promptSilverWolf.txt"
-refaudioPath = f"{current_path}/lib/参考音频/该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav"
-GPTPathin = f"GPT_weights_v2/银狼-e10.ckpt"
-SoVITSPathin = f"SoVITS_weights_v2/银狼_e15_s480.pth"
-bgPathin = f"lib/bg/bgSilverWolf.png"
-promptPathin = f"lib/prompt/promptSilverWolf.txt"
-refaudioPathin = f"lib/参考音频/该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav"
-
-class ChatCompletionMessage(TypedDict):
-    role: str
-    content: Optional[str]
-    user: NotRequired[str]
-    tool_calls: NotRequired[List]
+class ChatClient:
+    """聊天客户端API封装"""
+    
+    def __init__(self, server_url: str):
+        self.server_url = server_url
+        self.session_id = str(uuid.uuid4())
+    
+    def get_agents(self) -> list:
+        """获取所有可用角色"""
+        try:
+            response = requests.get(f"{self.server_url}/agents")
+            if response.status_code == 200:
+                return response.json()["agents"]
+            return []
+        except Exception as e:
+            print(f"获取角色列表失败: {e}")
+            return []
+    
+    def get_agent_config(self, agent_name: str) -> Optional[Dict]:
+        """获取角色配置"""
+        try:
+            response = requests.get(f"{self.server_url}/agent/{agent_name}")
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"获取角色配置失败: {e}")
+            return None
+    
+    def get_agent_prompt(self, agent_name: str) -> Optional[Dict]:
+        """获取角色提示词"""
+        try:
+            response = requests.get(f"{self.server_url}/agent/{agent_name}/prompt")
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"获取角色提示词失败: {e}")
+            return None
+    
+    def init_agent_session(self, agent_name: str) -> Optional[Dict]:
+        """初始化角色会话"""
+        try:
+            data = {
+                "message": "",  # 空消息，用于初始化
+                "agent": agent_name,
+                "session_id": self.session_id
+            }
+            response = requests.post(f"{self.server_url}/agent/{agent_name}/init", json=data)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"初始化角色会话失败: {e}")
+            return None
+    
+    def switch_agent(self, agent_name: str) -> bool:
+        """切换角色"""
+        try:
+            response = requests.post(f"{self.server_url}/switch_agent/{agent_name}")
+            return response.status_code == 200
+        except Exception as e:
+            print(f"切换角色失败: {e}")
+            return False
+    
+    def send_message(self, message: str, agent: str) -> Optional[Dict]:
+        """发送消息"""
+        try:
+            data = {
+                "message": message,
+                "agent": agent,
+                "session_id": self.session_id
+            }
+            response = requests.post(f"{self.server_url}/chat", json=data)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"发送消息失败: {e}")
+            return None
+    
+    def get_audio(self, filename: str) -> Optional[bytes]:
+        """获取音频文件 - 已废弃"""
+        print("警告: get_audio方法已废弃，音频数据现在直接包含在聊天响应中")
+        return None
 
 
 class FloatingWindow(QtWidgets.QWidget):
-
+    """主聊天窗口"""
+    
     def __init__(self):
-
         super().__init__()
-        self.setWindowTitle("对话")
+        self.chat_client = ChatClient(SERVER_URL)
+        self.current_agent = "银狼"
+        self.agent_configs = {}
+        self.is_initialized = False
+        
+        # 先初始化UI组件
+        self.init_ui()
+        
+        # 然后加载角色配置
+        self.load_agents()
+        
+        # 最后更新UI显示
+        self.update_background()
+        self.update_button_color()
+        
+        # 初始化当前角色
+        self.initialize_current_agent()
+    
+    def init_ui(self):
+        """初始化UI"""
+        self.setWindowTitle("AI聊天")
         self.setFixedSize(600, 400)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint |
-                            QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_AlwaysStackOnTop, True)
+        
         # 主布局
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        # 创建一个容器来放置图片和输入框
+        
+        # 容器
         self.container = QtWidgets.QWidget(self)
         self.container.setGeometry(0, 0, 600, 400)
         self.container.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        # 图片
+        
+        # 背景图片
         self.imageLabel = QtWidgets.QLabel(self.container)
-        pixmap = QtGui.QPixmap(
-            f"{current_path}/lib/bg.png").scaled(600, 400, QtCore.Qt.KeepAspectRatio)
-        self.imageLabel.setPixmap(pixmap)
+        self.update_background()
         self.imageLabel.setGeometry(0, 0, 600, 400)
-
-        # 文本显示、输入框和按钮垂直布局
+        
+        # 文本显示区域
         inputLayout = QtWidgets.QVBoxLayout(self.container)
         inputLayout.setContentsMargins(300, 49, 30, 20)
-        # 文本显示
+        
         font = QtGui.QFont()
         font.setFamily("Unifont")
         font.setPointSize(13)
+        
         self.textArea = QtWidgets.QTextEdit(self.container)
         self.textArea.setReadOnly(True)
         self.textArea.setStyleSheet("background: rgba(255, 255, 255, 150);")
         self.textArea.setGeometry(0, 0, 600, 350)
         self.textArea.setFont(font)
         inputLayout.addWidget(self.textArea)
+        
+        # 输入区域
         sendlayout = QtWidgets.QHBoxLayout()
         sendlayout.setContentsMargins(0, 0, 0, 0)
-        # 输入框
+        
         self.input_box = QtWidgets.QLineEdit(self.container)
         self.input_box.returnPressed.connect(self.send_message)
         sendlayout.addWidget(self.input_box)
-        # 发送按钮
+        
         self.send_button = QtWidgets.QPushButton("发送", self.container)
         self.send_button.clicked.connect(self.send_message)
         sendlayout.addWidget(self.send_button)
         inputLayout.addLayout(sendlayout)
-
-        # 1级按钮布局
-        firstButtonLayout = QtWidgets.QHBoxLayout(self.container)
-        # 切换按钮
+        
+        # 设置按钮
         self.setButton = QtWidgets.QLabel(self.container)
-        self.setButton.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 16pt;")
+        self.setButton.setStyleSheet("color: black; font-family: Unifont; font-size: 16pt;")
         self.setButton.setText("设置")
         self.setButton.setGeometry(310, 25, 50, 24)
-        firstButtonLayout.addWidget(self.setButton)
         self.setButton.raise_()
-
-        # 事件
+        
+        # 事件处理
         self.input_box.setDisabled(True)
         self.setButton.setDisabled(True)
-
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.update_text_area)
-        self.timer.start(100)
-
+        self.setButton.mousePressEvent = lambda event: self.showSettings(event)
+        
+        # 拖拽相关
         self.is_dragging = False
         self.wheshowSet = False
-
-        self.setButton.mousePressEvent = lambda event: self.showSettings(event)
-
+        
         self.update_button_color()
-
-    # 移动浮窗
+    
+    def load_agents(self):
+        """加载角色列表"""
+        print("🔄 开始加载角色配置...")
+        agents = self.chat_client.get_agents()
+        print(f"📋 获取到角色列表: {agents}")
+        
+        for agent in agents:
+            print(f"🔍 加载角色配置: {agent}")
+            config = self.chat_client.get_agent_config(agent)
+            if config:
+                self.agent_configs[agent] = config
+                print(f"✅ 角色 {agent} 配置加载成功")
+                print(f"   背景路径: {config.get('bg_path', 'N/A')}")
+                print(f"   GPT路径: {config.get('gpt_path', 'N/A')}")
+                print(f"   SoVITS路径: {config.get('sovits_path', 'N/A')}")
+            else:
+                print(f"❌ 角色 {agent} 配置加载失败")
+        
+        print(f"📊 总共加载了 {len(self.agent_configs)} 个角色配置")
+    
+    def initialize_current_agent(self):
+        """初始化当前角色"""
+        if not self.is_initialized:
+            self.textArea.append("🔄 正在初始化角色...")
+            
+            def init_thread():
+                try:
+                    # 获取角色提示词
+                    prompt_info = self.chat_client.get_agent_prompt(self.current_agent)
+                    if prompt_info and prompt_info.get("prompt"):
+                        self.textArea.append(f"📝 角色提示词: {prompt_info['prompt'][:100]}...")
+                    
+                    # 初始化角色会话
+                    init_result = self.chat_client.init_agent_session(self.current_agent)
+                    if init_result:
+                        ai_response = init_result["response"]
+                        # 不过滤think标签，直接显示完整回复
+                        self.textArea.append(f"{self.current_agent}: {ai_response}")
+                        
+                        # 使用新的音频处理方式
+                        audio_data_list = init_result.get("audio_data", [])
+                        print(f"收到音频数据片段数量: {len(audio_data_list)}")
+                        if audio_data_list:
+                            print(f"音频数据大小: {[len(data) for data in audio_data_list]} 字节")
+                            self.process_audio_data(audio_data_list)
+                        else:
+                            print("没有收到音频数据")
+                    
+                    self.is_initialized = True
+                    self.input_box.setDisabled(False)
+                    self.setButton.setDisabled(False)
+                    
+                except Exception as e:
+                    print(f"角色初始化失败: {e}")
+                    self.textArea.append("❌ 角色初始化失败，请检查服务器连接")
+                    self.input_box.setDisabled(False)
+                    self.setButton.setDisabled(False)
+            
+            threading.Thread(target=init_thread, daemon=True).start()
+    
+    def update_background(self):
+        """更新背景图片"""
+        if self.current_agent in self.agent_configs:
+            bg_path = self.agent_configs[self.current_agent]["bg_path"]
+            if os.path.exists(bg_path):
+                pixmap = QtGui.QPixmap(bg_path).scaled(600, 400, QtCore.Qt.KeepAspectRatio)
+                self.imageLabel.setPixmap(pixmap)
+            else:
+                # 使用默认背景
+                default_bg = current_path / "lib" / "bg.png"
+                if default_bg.exists():
+                    pixmap = QtGui.QPixmap(str(default_bg)).scaled(600, 400, QtCore.Qt.KeepAspectRatio)
+                    self.imageLabel.setPixmap(pixmap)
+    
+    def update_button_color(self):
+        """更新按钮颜色"""
+        if self.current_agent in self.agent_configs:
+            bg_path = self.agent_configs[self.current_agent]["bg_path"]
+            if os.path.exists(bg_path):
+                pixmap = QtGui.QPixmap(bg_path)
+                image = pixmap.toImage()
+                
+                # 计算按钮区域的平均颜色
+                widthin, widthout = 310, 360
+                heightin, heightout = 25, 49
+                r_total = g_total = b_total = 0
+                
+                for x in range(widthin, widthout):
+                    for y in range(heightin, heightout):
+                        color = QColor(image.pixel(x, y))
+                        r_total += color.red()
+                        g_total += color.green()
+                        b_total += color.blue()
+                
+                pixel_count = (widthout - widthin) * (heightout - heightin)
+                avg_r = r_total // pixel_count
+                avg_g = g_total // pixel_count
+                avg_b = b_total // pixel_count
+                
+                brightness = (avg_r * 299 + avg_g * 587 + avg_b * 114) // 1000
+                color = "white" if brightness > 128 else "black"
+                
+                self.setButton.setStyleSheet(
+                    f"color: {color}; font-family: Unifont; font-size: 16pt;"
+                )
+    
     def mousePressEvent(self, event):
+        """鼠标按下事件"""
         if event.button() == QtCore.Qt.LeftButton:
             self.is_dragging = True
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
-
+    
     def mouseMoveEvent(self, event):
+        """鼠标移动事件"""
         if self.is_dragging:
             self.move(event.globalPos() - self.drag_position)
             event.accept()
-
+    
     def mouseReleaseEvent(self, event):
+        """鼠标释放事件"""
         if event.button() == QtCore.Qt.LeftButton:
             self.is_dragging = False
-
+    
     def send_message(self):
+        """发送消息"""
+        if not self.is_initialized:
+            self.textArea.append("⚠️ 请等待角色初始化完成")
+            return
+            
         message = self.input_box.text()
-        if message:
-            self.textArea.append("You: " + message)
-            self.input_box.clear()
-            self.input_box.setDisabled(True)
-            self.setButton.setDisabled(True)
-            input_queue.put(message)
-
-    def update_text_area(self):
-        try:
-            while True:
-                result = output_queue.get_nowait()
-                self.textArea.append(result)
+        if not message:
+            return
+        
+        # 显示用户消息
+        self.textArea.append(f"You: {message}")
+        self.input_box.clear()
+        self.input_box.setDisabled(True)
+        self.setButton.setDisabled(True)
+        
+        # 发送消息到服务器
+        def send_message_thread():
+            try:
+                response = self.chat_client.send_message(message, self.current_agent)
+                if response:
+                    # 立即显示AI回复（不过滤think标签）
+                    ai_response = response["response"]
+                    self.textArea.append(f"{self.current_agent}: {ai_response}")
+                    
+                    # 使用生产者-消费者模式处理音频数据流
+                    audio_data_list = response.get("audio_data", [])
+                    print(f"收到音频数据片段数量: {len(audio_data_list)}")
+                    if audio_data_list:
+                        print(f"音频数据大小: {[len(data) for data in audio_data_list]} 字节")
+                        self.process_audio_data(audio_data_list)
+                    else:
+                        print("没有收到音频数据")
+                
+                # 重新启用输入
                 self.input_box.setDisabled(False)
                 self.setButton.setDisabled(False)
-        except queue.Empty:
-            pass
-
+                
+            except Exception as e:
+                print(f"发送消息失败: {e}")
+                self.textArea.append("错误: 无法连接到服务器")
+                self.input_box.setDisabled(False)
+                self.setButton.setDisabled(False)
+        
+        threading.Thread(target=send_message_thread, daemon=True).start()
+    
+    def process_audio_data(self, audio_data_list: List[str]):
+        """使用生产者-消费者模式处理base64编码的音频数据流"""
+        if not audio_data_list:
+            print("音频数据列表为空")
+            return
+        
+        print(f"开始处理音频数据，共 {len(audio_data_list)} 个片段")
+        
+        # 创建共享队列
+        shared_queue = queue.Queue()
+        
+        def audio_producer(audio_data_list, shared_queue):
+            """音频数据生产者"""
+            try:
+                for i, audio_base64 in enumerate(audio_data_list):
+                    if audio_base64:
+                        # 解码base64音频数据
+                        audio_data = base64.b64decode(audio_base64)
+                        
+                        # 生成临时文件路径
+                        temp_filename = f"{uuid.uuid4()}_{i}.wav"
+                        temp_path = current_path / "temp" / temp_filename
+                        
+                        # 确保temp目录存在
+                        temp_path.parent.mkdir(exist_ok=True)
+                        
+                        # 保存音频文件
+                        with open(temp_path, 'wb') as f:
+                            f.write(audio_data)
+                        
+                        print(f"✅ 保存音频片段 {i+1}/{len(audio_data_list)}: {temp_path} ({len(audio_data)} 字节)")
+                        # 将文件路径放入队列
+                        shared_queue.put(str(temp_path))
+                    else:
+                        print(f"❌ 音频数据为空: 片段 {i+1}")
+                        shared_queue.put(None)
+                        
+            except Exception as e:
+                print(f"❌ 音频数据处理失败: {e}")
+                shared_queue.put(None)
+            
+            # 标记生产线程结束
+            shared_queue.put(None)
+            print("🎬 生产者线程结束")
+        
+        def audio_consumer(shared_queue):
+            """音频播放消费者"""
+            print("🎵 消费者线程开始")
+            while True:
+                # 从队列中获取文件路径
+                file_path = shared_queue.get()
+                if file_path is None:
+                    # 如果接收到 None，表示生产线程已经结束
+                    print("🎵 消费者线程结束")
+                    break
+                
+                try:
+                    print(f"🎵 开始播放: {file_path}")
+                    # 播放音频
+                    audio = AudioSegment.from_file(file_path)
+                    print(f"🎵 音频信息: {audio.channels}声道, {audio.frame_rate}Hz, {audio.sample_width}字节/样本")
+                    
+                    play_obj = sa.play_buffer(
+                        audio.raw_data, 
+                        num_channels=audio.channels,
+                        bytes_per_sample=audio.sample_width, 
+                        sample_rate=audio.frame_rate
+                    )
+                    print(f"🎵 播放对象创建成功，等待播放完成...")
+                    play_obj.wait_done()
+                    print(f"🎵 播放完成: {file_path}")
+                    
+                    # 播放完成后立即删除文件
+                    os.remove(file_path)
+                    print(f"🗑️ 文件已删除: {file_path}")
+                    
+                except Exception as e:
+                    print(f"❌ 音频播放失败: {e}")
+                    # 尝试删除临时文件
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            print(f"🗑️ 清理失败文件: {file_path}")
+                    except:
+                        pass
+        
+        # 启动生产者线程
+        producer_thread = threading.Thread(
+            target=audio_producer, 
+            args=(audio_data_list, shared_queue),
+            daemon=True
+        )
+        producer_thread.start()
+        print("🚀 生产者线程已启动")
+        
+        # 启动消费者线程
+        consumer_thread = threading.Thread(
+            target=audio_consumer, 
+            args=(shared_queue,),
+            daemon=True
+        )
+        consumer_thread.start()
+        print("🚀 消费者线程已启动")
+    
     def showSettings(self, event):
+        """显示设置窗口"""
         self.wheshowSet = True
-        # 创建设置窗口
         self.setting_window = SettingWindow(self)
         self.setting_window.show()
 
-    def update_button_color(self):
-        # 加载背景图像并计算平均颜色
-        pixmap = QtGui.QPixmap(f"{bgPath}")
-        # 获取图像的宽高
-        widthin = 310
-        widthout = 360
-        heightin = 25
-        heightout = 49
-        # 将图像转换为 QImage，以便访问像素数据
-        image = pixmap.toImage()
-        r_total = g_total = b_total = 0
-        for x in range(widthin, widthout):
-            for y in range(heightin, heightout):
-                color = QColor(image.pixel(x, y))
-                r_total += color.red()
-                g_total += color.green()
-                b_total += color.blue()
-        pixel_count = (widthout-widthin) * (heightout-heightin)
-        # 计算平均 RGB 值
-        avg_r = r_total // pixel_count
-        avg_g = g_total // pixel_count
-        avg_b = b_total // pixel_count
-        # 根据平均亮度判断字体颜色
-        brightness = (avg_r * 299 + avg_g * 587 + avg_b * 114) // 1000
-        if brightness > 128:  # 如果较暗，使用白色字体
-            self.setButton.setStyleSheet(
-                "color: white; font-family: Unifont; font-size: 16pt; ")
-            print("当前模式：暗")
-
-        else:  # 如果较亮，使用黑色字体
-            self.setButton.setStyleSheet(
-                "color: black; font-family: Unifont; font-size: 16pt; ")
-            print("当前模式：亮")
-
-
 class SettingWindow(QtWidgets.QWidget):
+    """设置窗口"""
+    
     def __init__(self, parent=None):
-
         super().__init__(parent)
+        self.parent_window = parent
+        
+        # 初始化UI
         self.setFixedSize(600, 400)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint |
-                            QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-
-        # 设置背景
+        
+        # 背景
         self.settingbg = QtWidgets.QLabel(self)
-        settingbg = QtGui.QPixmap(
-            f"{current_path}/lib/settingbg.png").scaled(600, 400, QtCore.Qt.KeepAspectRatio)
-        self.settingbg.setPixmap(settingbg)
+        settingbg_path = current_path / "lib" / "settingbg.png"
+        if settingbg_path.exists():
+            settingbg = QtGui.QPixmap(str(settingbg_path)).scaled(600, 400, QtCore.Qt.KeepAspectRatio)
+            self.settingbg.setPixmap(settingbg)
         self.settingbg.setGeometry(0, 0, 600, 400)
-
-        # 添加设置窗口内容
+        
+        # 布局
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-
+        
+        # 标题
         self.top_layout = QtWidgets.QHBoxLayout()
         self.top_layout.setContentsMargins(0, 20, 20, 0)
         self.top_layout.addStretch()
+        
         self.label = QtWidgets.QLabel("设置-切换模型")
-        self.label.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 15pt;")
+        self.label.setStyleSheet("color: black; font-family: Unifont; font-size: 15pt;")
         self.top_layout.addWidget(self.label)
         self.layout.addLayout(self.top_layout)
-
-        self.agent_combo = QtWidgets.QComboBox()
-        self.agent_combo.addItems(Agentlist)
-        self.agent_combo.currentTextChanged.connect(lambda userinput: self.freshPathWindow(userinput))
+        
+        # 角色选择
         self.left_layout = QtWidgets.QVBoxLayout()
         self.left_layout.setContentsMargins(40, 0, 40, 0)
+        
+        self.agent_combo = QtWidgets.QComboBox()
+        self.agent_combo.addItems(list(self.parent_window.agent_configs.keys()))
+        self.agent_combo.setCurrentText(self.parent_window.current_agent)
+        self.agent_combo.currentTextChanged.connect(self.on_agent_changed)
         self.left_layout.addWidget(self.agent_combo)
-
-        self.gpt_path_title = QtWidgets.QLabel()
-        self.gpt_path_title.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 15pt; background:rgba(255,255,255,0.5)")
-        self.gpt_path_title.setText("GPT模型路径")
-        self.left_layout.addWidget(self.gpt_path_title)
-        self.gpt_path_edit = QtWidgets.QLineEdit()
-        self.gpt_path_edit.setReadOnly(True)
-        self.gpt_path_edit.setText(GPTPath)
-        self.left_layout.addWidget(self.gpt_path_edit)
-
-        self.sovits_path_title = QtWidgets.QLabel()
-        self.sovits_path_title.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 15pt; background:rgba(255,255,255,0.5)")
-        self.sovits_path_title.setText("SoVITS模型路径")
-        self.left_layout.addWidget(self.sovits_path_title)
-        self.sovits_path_edit = QtWidgets.QLineEdit()
-        self.sovits_path_edit.setReadOnly(True)
-        self.sovits_path_edit.setText(SoVITSPath)
-        self.left_layout.addWidget(self.sovits_path_edit)
-
-        self.bg_path_title = QtWidgets.QLabel()
-        self.bg_path_title.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 15pt; background:rgba(255,255,255,0.5)")
-        self.bg_path_title.setText("背景路径")
-        self.left_layout.addWidget(self.bg_path_title)
-        self.bg_path_edit = QtWidgets.QLineEdit()
-        self.bg_path_edit.setReadOnly(True)
-        self.bg_path_edit.setText(bgPath)
-        self.left_layout.addWidget(self.bg_path_edit)
-
-        self.prompt_path_title = QtWidgets.QLabel()
-        self.prompt_path_title.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 15pt; background:rgba(255,255,255,0.5)")
-        self.prompt_path_title.setText("prompt路径")
-        self.left_layout.addWidget(self.prompt_path_title)
-        self.prompt_path_edit = QtWidgets.QLineEdit()
-        self.prompt_path_edit.setReadOnly(True)
-        self.prompt_path_edit.setText(promptPath)
-        self.left_layout.addWidget(self.prompt_path_edit)
-
-        self.refaudioPath_title = QtWidgets.QLabel()
-        self.refaudioPath_title.setStyleSheet(
-            "color: black; font-family: Unifont; font-size: 15pt; background:rgba(255,255,255,0.5)")
-        self.refaudioPath_title.setText("参考音频路径")
-        self.left_layout.addWidget(self.refaudioPath_title)
-        self.refaudioPath_edit = QtWidgets.QLineEdit()
-        self.refaudioPath_edit.setReadOnly(True)
-        self.refaudioPath_edit.setText(refaudioPath)
-        self.left_layout.addWidget(self.refaudioPath_edit)
-
+        
+        # 配置显示
+        self.config_labels = {}
+        config_fields = [
+            ("gpt_path", "GPT模型路径"),
+            ("sovits_path", "SoVITS模型路径"),
+            ("bg_path", "背景路径"),
+            ("prompt_path", "Prompt路径"),
+            ("ref_audio_path", "参考音频路径")
+        ]
+        
+        for field, title in config_fields:
+            title_label = QtWidgets.QLabel(title)
+            title_label.setStyleSheet("color: black; font-family: Unifont; font-size: 15pt; background:rgba(255,255,255,0.5)")
+            self.left_layout.addWidget(title_label)
+            
+            value_edit = QtWidgets.QLineEdit()
+            value_edit.setReadOnly(True)
+            self.left_layout.addWidget(value_edit)
+            self.config_labels[field] = value_edit
+        
         self.layout.addLayout(self.left_layout)
-
         self.layout.addStretch()
-
+        
+        # 按钮
         self.bottom_layout = QtWidgets.QHBoxLayout()
         self.bottom_layout.setContentsMargins(0, 0, 20, 20)
         self.bottom_layout.addStretch()
+        
         self.apply_button = QtWidgets.QPushButton("应用")
         self.apply_button.clicked.connect(self.apply)
         self.bottom_layout.addWidget(self.apply_button)
-        self.clobutton = QtWidgets.QPushButton("关闭")
-        self.clobutton.clicked.connect(self.close)
-        self.bottom_layout.addWidget(self.clobutton)
+        
+        self.close_button = QtWidgets.QPushButton("关闭")
+        self.close_button.clicked.connect(self.close)
+        self.bottom_layout.addWidget(self.close_button)
+        
         self.layout.addLayout(self.bottom_layout)
-
-        self.layout.addLayout(self.left_layout)
-
-    def freshPath(self):
-        global Agent, GPTPath, SoVITSPath, bgPath, promptPath, refaudioPath
-        global GPTPathin, SoVITSPathin, bgPathin, promptPathin, refaudioPathin
-        if Agent == "userinput":
-            pass
+        
+        # 更新配置显示
+        self.update_config_display()
+    
+    def update_config_display(self):
+        """更新配置显示"""
+        current_agent = self.agent_combo.currentText()
+        print(f"🔍 更新配置显示: {current_agent}")
+        
+        if current_agent in self.parent_window.agent_configs:
+            config = self.parent_window.agent_configs[current_agent]
+            print(f"✅ 找到角色配置: {config}")
+            
+            for field, edit in self.config_labels.items():
+                # 从字典中获取值，而不是使用getattr
+                value = config.get(field, "")
+                display_value = str(value) if value != "none" else ""
+                edit.setText(display_value)
+                print(f"   {field}: {display_value}")
         else:
-            with open(f'{current_path}/modelconfig.yaml', 'r') as file:
-                config = yaml.safe_load(file)
-            GPTPathin = config['Agents'].get(Agent)["GPTPath"]
-            GPTPath = f"{os.path.dirname(current_path)}/GPT-SoVITS/{GPTPathin}"
-            SoVITSPathin = config['Agents'].get(Agent)["SoVITSPath"]
-            SoVITSPath = f"{os.path.dirname(current_path)}/GPT-SoVITS/{SoVITSPathin}"
-            bgPathin = config['Agents'].get(Agent)["bgPath"]
-            bgPath = f"{current_path}/{bgPathin}"
-            promptPathin = config['Agents'].get(Agent)["promptPath"]
-            promptPath = f"{current_path}/{promptPathin}"
-            refaudioPathin = config['Agents'].get(Agent)["refaudioPath"]
-            refaudioPath = f"{current_path}/{refaudioPathin}"
-
-
-    def freshPathWindow(self, userinput):
-        global Agent, GPTPath, SoVITSPath, bgPath, promptPath, refaudioPath
-        global GPTPathin, SoVITSPathin, bgPathin, promptPathin, refaudioPathin
-        Agent = userinput
-        self.freshPath()
-        if Agent == "userinput":
-            self.gpt_path_edit.setText("")
-            self.sovits_path_edit.setText("")
-            self.bg_path_edit.setText("")
-            self.prompt_path_edit.setText("")
-            self.refaudioPath_edit.setText("")
-            self.gpt_path_edit.setReadOnly(False)
-            self.sovits_path_edit.setReadOnly(False)
-            self.bg_path_edit.setReadOnly(False)
-            self.prompt_path_edit.setReadOnly(False)
-            self.refaudioPath_edit.setReadOnly(False)
-        else:
-            self.gpt_path_edit.setReadOnly(True)
-            self.sovits_path_edit.setReadOnly(True)
-            self.bg_path_edit.setReadOnly(True)
-            self.prompt_path_edit.setReadOnly(True)
-
-            self.gpt_path_edit.setText(GPTPath)
-            self.sovits_path_edit.setText(SoVITSPath)
-            self.bg_path_edit.setText(bgPath)
-            self.prompt_path_edit.setText(promptPath)
-            self.refaudioPath_edit.setText(refaudioPath)
-
+            print(f"❌ 未找到角色 {current_agent} 的配置")
+            # 清空所有字段
+            for edit in self.config_labels.values():
+                edit.setText("")
+    
+    def on_agent_changed(self, agent_name):
+        """角色改变事件"""
+        self.update_config_display()
+    
+    def apply(self):
+        """应用设置"""
+        new_agent = self.agent_combo.currentText()
+        
+        # 切换角色
+        if self.parent_window.chat_client.switch_agent(new_agent):
+            self.parent_window.current_agent = new_agent
+            self.parent_window.update_background()
+            self.parent_window.update_button_color()
+            self.parent_window.textArea.clear()
+            
+            # 重新初始化新角色
+            self.parent_window.is_initialized = False
+            self.parent_window.initialize_current_agent()
+        
+        self.close()
+    
     def close(self):
-        self.parent().wheshowSet = False
+        """关闭窗口"""
+        self.parent_window.wheshowSet = False
         self.deleteLater()
 
-    def changeModel(self):
-        try:
-            url = "http://127.0.0.1:9880/set_gpt_weights"
-            params = {"weights_path": GPTPathin}
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                print(f"设置 GPT 权重成功：{GPTPathin}")
-            else:
-                try:
-                    error_info = response.json()
-                    print(f"设置 GPT 权重失败：{error_info}")
-                except Exception as e:
-                    print(f"设置 GPT 权重失败：{response.text}")
-
-            url = "http://127.0.0.1:9880/set_sovits_weights"
-            params = {"weights_path": SoVITSPathin}
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                print(f"设置 SoVITS 权重成功：{GPTPathin}")
-            else:
-                try:
-                    error_info = response.json()
-                    print(f"设置 SoVITS 权重失败：{error_info}")
-                except Exception as e:
-                    print(f"设置 SoVITS 权重失败：{response.text}")
-        except:
-            print("调用api更改失败")
-        if DEBUG_CONFIG == 1:
-            print(f"当前GPT路径{GPTPath},Soviets路径{SoVITSPath},背景路径{bgPath},prompt路径{promptPath},参考音频路径{refaudioPath}")
-
-    def apply(self):
-        global chat_history
-
-        with open(f"{promptPath}", 'r') as file:
-            chindexprompt = file.read()
-        chat_history = [ChatCompletionMessage(role="user", content=chindexprompt)]
-
-        self.parent().input_box.setDisabled(True)
-        self.parent().imageLabel.setPixmap(QtGui.QPixmap(
-            bgPath).scaled(600, 400, QtCore.Qt.KeepAspectRatio))
-        self.parent().textArea.clear()
-        self.parent().update_button_color()
-        self.changeModel()
-        self.parent().input_box.setDisabled(False)
-        self.close()
-
-
-def model_thread_function():
-    global model_uid, Xinferenceclient, chat_history
-    
-    SettingWindow.freshPath(self=SettingWindow)
-    SettingWindow.changeModel(self=SettingWindow)
-    # 模型设定
-    endpoint = "http://127.0.0.1:9997"
-    model_name = "qwen2-instruct"
-    model_size_in_billions = "7"
-    model_format = "mlx"
-    model_engine = "MLX"
-    quantization = "4bit"
-
-    print(f"Xinference endpoint: {endpoint}")
-    print(f"Model Name: {model_name}")
-    print(f"Model Size (in billions): {model_size_in_billions}")
-    print(f"Model Format: {model_format}")
-    print(f"Quantization: {quantization}")
-    # 启动大模型
-    Xinferenceclient = Client(endpoint)
-    model_uid = Xinferenceclient.launch_model(
-        model_name=model_name,
-        model_engine=model_engine,
-        model_size_in_billions=model_size_in_billions,
-        model_format=model_format,
-        quantization=quantization,
-    )
-    model = Xinferenceclient.get_model(model_uid)
-    print(f"successfully launched model{model_uid}")
-    # 启动大模型,endl
-
-    # 处理输入对话历史，确保不会超出令牌限制
-    encoding = tiktoken.get_encoding("cl100k_base")
-    TOKEN_LIMIT = 32768
-    def count_tokens(messages):# 计算文本的令牌数
-        token_count = 0
-        for message in messages:
-            token_count += len(encoding.encode(message["content"]))
-        return token_count
-    def trim_history(messages):
-        while count_tokens(messages) > TOKEN_LIMIT:
-            if messages.__len__ > 3:
-                messages.pop(1)  # 删除除系统消息外最早的消息，直到令牌数在限制内
-            else:
-                print("系统消息过长")
-        return messages
-
-      # chathistory设定
-    # 默认prompt设定
-    with open(f"{current_path}/lib/prompt.txt", 'r') as file:
-        indexprompt = file.read()
-    prompt = indexprompt
-    chat_history.append(ChatCompletionMessage(role="user", content=prompt))
-
-    messages = [{"role": message["role"], "content": message["content"]} for message in chat_history]# 构建消息列表
-    messages = trim_history(messages)# 调整对话历史，确保不会超过令牌限制
-    if DEBUG_CONFIG == 1:
-        print(messages)
-
-    client = openai.Client(api_key="hahanothing", base_url="http://127.0.0.1:9997/v1")
-
-    completion = client.chat.completions.create(
-        model=model_uid,
-        messages=messages,
-        max_tokens=1024,
-        temperature=0.8,
-    )
-    content = completion.choices[0].message.content
-    print(f"{model_name}: {content}")
-    output_queue.put(f"{content}")
-    chat_history.append(ChatCompletionMessage(role="assistant", content=content))
-    # 默认prompt设定,endl
-    if DEBUG_CONFIG == 1:
-        print(f"对话历史：{chat_history}")
-
-    while True:
-        print("对话状态")
-        prompt = input_queue.get()
-        print(f"获得prompt{prompt}")
-        chat_history.append(ChatCompletionMessage(role="user", content=prompt))
-        messages = [{"role": message["role"], "content": message["content"]} for message in chat_history]  # 构建消息列表
-        messages = trim_history(messages)  # 调整对话历史，确保不会超过令牌限制
-
-        completion = client.chat.completions.create(
-            model=model_uid,
-            messages=messages,
-            max_tokens=1024,
-            temperature=0.8,
-        )
-        content = completion.choices[0].message.content
-        if DEBUG_CONFIG == 1:
-            print(f"对话历史：{chat_history}")
-        print(f"{model_name}: {content}")
-        output_queue.put(f"{Agent}: {content}")
-        chat_history.append(ChatCompletionMessage(role="assistant", content=content))
-
-
-        print("生成音频状态")
-        try:
-            text = content
-            text_without_round_brackets = re.sub(r'（.*?）|\(.*?\)', '', text)# 去除圆括号中的内容，包括半角和全角圆括号
-            textlist = re.findall(r'[^,.!?;:，。！？：；]*[,.!?;:，。！？：；]*', text_without_round_brackets)# 分割文本为句子
-            textlist = [part for part in textlist if part.strip()]# 去除空白的部分
-            shared_queue = queue.Queue()
-
-            def textToVoiceProducer(textlist, shared_queue):
-                try:
-                    basename = os.path.basename(refaudioPath)
-                    reftext, extension = os.path.splitext(basename)
-                    print(f"参考音频文本:{reftext}")
-                    for i in range(0, len(textlist)):
-                        base_url = 'http://127.0.0.1:9880/tts'
-                        # 推理 - 使用执行参数指定的参考音频（POST 请求）
-                        post_data = {
-                            "prompt_text": reftext,
-                            "prompt_lang": "zh",
-                            "ref_audio_path": refaudioPath,
-                            "text": textlist[i],
-                            "text_lang": "zh",
-                        }
-
-                        response = requests.post(base_url, json=post_data)
-                        if response.status_code == 200:
-                            print("produced " + textlist[i])
-                            # 生成文件名
-                            filename = f"{i}.wav"
-                            file_path = os.path.join(
-                                f"{current_path}/temp/", filename)
-                            with open(file_path, 'wb') as audio_file:
-                                audio_file.write(response.content)
-                            # 将文件名放入队列
-                            shared_queue.put(filename)
-                        else:
-                            if DEBUG_CONFIG == 1:
-                                print(f"错误: {response.status_code}, {response.text}")
-                            else:
-                                print("无法生成音频,在开始时传入\"DEBUG_CONFIG=1\"以打印错误数据")
-                            shared_queue.put(None)
-                            break
-
-                    # 标记生产线程结束
-                    shared_queue.put(None)
-                except:
-                    print("tts服务器不存在")
-                    shared_queue.put(None)
-
-
-
-            def Voice(shared_queue):
-                while True:
-                    # 从队列中获取文件名
-                    filename = shared_queue.get()
-                    if filename is None:
-                        # 如果接收到 None，表示生产线程已经结束
-                        break
-                    file_path = os.path.join(f"{current_path}/temp/", filename)
-                    audio = AudioSegment.from_file(file_path)
-                    play_obj = sa.play_buffer(audio.raw_data, num_channels=audio.channels,
-                                              bytes_per_sample=audio.sample_width, sample_rate=audio.frame_rate)
-                    play_obj.wait_done()
-                    os.remove(file_path)
-
-            # 启动生产线程
-            producer_thread = threading.Thread(
-                target=textToVoiceProducer, args=(textlist, shared_queue))
-            producer_thread.start()
-
-            # 启动消费线程
-            consumer_thread = threading.Thread(
-                target=Voice, args=(shared_queue,))
-            consumer_thread.start()
-
-            # 等待生产线程结束
-            producer_thread.join()
-            # 等待消费线程结束
-            consumer_thread.join()
-        except:
-            print("音频生成功能失效，当前仅能进行对话")
-
-def quit():
-    Xinferenceclient.terminate_model(model_uid)
-    print(f"successfully terminated model {model_uid}")
-
-if __name__ == "__main__":
+def main():
+    """主函数"""
     app = QtWidgets.QApplication(sys.argv)
     window = FloatingWindow()
     window.show()
-
-    model_thread = threading.Thread(target=model_thread_function)
-    model_thread.daemon = True
-    model_thread.start()
-
-    app.aboutToQuit.connect(lambda: quit())
-
+    
+    # 清理函数
+    def cleanup():
+        window.audio_player.stop()
+    
+    app.aboutToQuit.connect(cleanup)
     sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()

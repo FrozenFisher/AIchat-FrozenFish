@@ -1,0 +1,24 @@
+# AI聊天系统依赖包
+
+# Web框架
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# AI/ML相关
+# 移除xinference，使用ollama
+openai==1.3.7
+tiktoken==0.5.1
+
+# 音频处理
+pydub==0.25.1
+simpleaudio==1.0.4
+
+# GUI
+PyQt5==5.15.10
+
+# 配置和工具
+pyyaml==6.0.1
+requests==2.31.0
+
+# 类型提示
+typing-extensions==4.8.0 

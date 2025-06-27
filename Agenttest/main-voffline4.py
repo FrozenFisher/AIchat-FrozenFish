@@ -54,7 +54,7 @@ from PyQt5.QtGui import QColor
 conda activate xinference
 XINFERENCE_MODEL_SRC=modelscope xinference-local --host 0.0.0.0 --port 9997
 /Users/ycc/workspace/Chat/GPT-SoVITS/go-apiv2.command ; exit;
-/usr/bin/python3 /Users/ycc/workspace/Chat/collection/main-voffline4.py
+/usr/bin/python3 /Users/ycc/workspace/Chat/collection/client.py
 
 /Users/ycc/workspace/Chat/GPT-SoVITS/go-webui.command ; exit;
 '''

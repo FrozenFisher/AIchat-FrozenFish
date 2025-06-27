@@ -1,21 +1,18 @@
-from xinference.client import Client
+from composio import ComposioToolSet, App
+toolset = ComposioToolSet(api_key="h6ci7q0d4l427nownc993h")
 
-# 模型设定
-endpoint = "http://127.0.0.1:9997"
-model_name = "qwen2-instruct"
-model_size_in_billions = "7"
-model_format = "mlx"
-model_engine = "MLX"
-quantization = "4bit"
+integration = toolset.get_integration(id="8fd3ac89-bf93-4e82-b098-8ce19e78f89a")
+# Collect auth params from your users
+print(integration.expectedInputFields)
 
-
-client = Client(endpoint)
-model_uid = client.launch_model(
-    model_name=model_name,
-    model_engine=model_engine,
-    model_size_in_billions=model_size_in_billions,
-    model_format=model_format,
-    quantization=quantization,
-    n_ctx=2048,
+connection_request = toolset.initiate_connection(
+    integration_id=integration.id,
+    connected_account_params={
+  "apikey": "your apikey"
+  },
+    entity_id="default",
 )
-model = client.get_model(model_uid)
+
+# Redirect step require for OAuth Flow
+print(connection_request.redirectUrl)
+print(connection_request.connectedAccountId)
