@@ -1,0 +1,39 @@
+# Letta AI聊天系统依赖
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+requests==2.31.0
+PyQt5==5.15.10
+pydub==0.25.1
+simpleaudio==1.0.4
+tiktoken==0.5.2
+PyYAML==6.0.1
+python-multipart==0.0.6
+
+# Letta相关依赖
+# 请根据您的Letta Docker环境添加相应的依赖
+# 例如：letta-client, letta-sdk 等
+
+# 核心依赖
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+requests==2.31.0
+pyyaml==6.0.1
+
+# Letta相关
+letta-client==0.1.0
+
+# 音频处理
+pydub==0.25.1
+simpleaudio==1.0.4
+
+# UI相关
+PyQt5==5.15.10
+
+# 工具库
+tiktoken==0.5.2
+pathlib2==2.3.7
+
+# 开发工具
+python-multipart==0.0.6 

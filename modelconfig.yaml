@@ -1,13 +1,4 @@
-
-
-
-
-
-
-
-
-
-
+#部分音频太短，总结：1-2秒的音频几乎肯定会导致400错误，建议至少使用5秒以上的音频，最佳是8-15秒。
 
 
 Agents:
@@ -16,22 +7,83 @@ Agents:
     SoVITSPath: SoVITS_weights_v2/银狼_e15_s480.pth
     bgPath: lib/bg/bgSilverWolf.png
     promptPath: lib/prompt/promptSilverWolf.txt
-    refaudioPath: lib/参考音频/该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav
+    refaudioPath:
+      高兴: lib/参考音频/高兴/看招，系统崩溃！紧张什么，对付几个公司的杂鱼，很简单的。.wav
+      悲伤: lib/参考音频/悲伤/唉，一个两个还好说，这次玩的有点大，基本上全部阵亡。这路估计不行。.wav
+      愤怒: lib/参考音频/愤怒/毕竟，你不知道假面愚者为了找乐子会玩出什么花样.wav
+      惊讶: lib/参考音频/惊讶/什么，喂！等等！什么，喂！等等！什么，喂！等等！.wav
+      恐惧: lib/参考音频/恐惧/搞什么，这条路明明是对的吗。黑塔这家伙，还玩心理战术.wav
+      厌恶: lib/参考音频/厌恶/唉，我说过了，那时我不知道是他.wav
+      中性: lib/参考音频/中性/这下相信了吧。要是还不放心，你可以断开网络连接，这样就看不到我了。除非你把它再连上.wav
+      害羞: lib/参考音频/害羞/是你啊，你看到了？是你啊，你看到了？.wav
+      兴奋: lib/参考音频/兴奋/你还挺懂我的嘛，没准我们会有不少共同语言呢。总算来了啊，伙伴.wav
+      舒适: lib/参考音频/舒适/哟。感觉你挺不错的呀。哟。感觉你挺不错的呀。.wav
+      紧张: lib/参考音频/紧张/这我不能告诉你，会被卡芙卡念叨的。这我不能告诉你，会被卡芙卡念叨的。.wav
+      爱慕: lib/参考音频/爱慕/总之，今天开心，送你一份小礼物.wav
+      委屈: lib/参考音频/委屈/啊，怎么又让我当场外支援，真无聊。最好传说不实，我可不想当赞达尔猎手.wav
+      骄傲: lib/参考音频/骄傲/但我就不一样了，我会在对方进门前就主动打招呼。你看，我对你还是不错的。.wav
+      困惑: lib/参考音频/困惑/哦，表情很严肃啊，你这是看见了什么.wav
+    
   温迪:
     GPTPath: GPT_weights_v2/温迪-e10.ckpt
     SoVITSPath: SoVITS_weights_v2/温迪_e10_s1170.pth
     bgPath: lib/bg/bgVenti.png
     promptPath: lib/prompt/promptVenti.txt
-    refaudioPath: lib/参考音频/啊，是你呀！欸嘿，要出门么？带我一个呗。.wav
+    refaudioPath:
+      高兴: lib/参考音频/高兴/温迪_高兴.wav
+      悲伤: lib/参考音频/悲伤/温迪_悲伤.wav
+      愤怒: lib/参考音频/愤怒/温迪_愤怒.wav
+      惊讶: lib/参考音频/惊讶/温迪_惊讶.wav
+      恐惧: lib/参考音频/恐惧/温迪_恐惧.wav
+      厌恶: lib/参考音频/厌恶/温迪_厌恶.wav
+      中性: lib/参考音频/中性/温迪_中性.wav
+      害羞: lib/参考音频/害羞/温迪_害羞.wav
+      兴奋: lib/参考音频/兴奋/温迪_兴奋.wav
+      舒适: lib/参考音频/舒适/温迪_舒适.wav
+      紧张: lib/参考音频/紧张/温迪_紧张.wav
+      爱慕: lib/参考音频/爱慕/温迪_爱慕.wav
+      委屈: lib/参考音频/委屈/温迪_委屈.wav
+      骄傲: lib/参考音频/骄傲/温迪_骄傲.wav
+      困惑: lib/参考音频/困惑/温迪_困惑.wav
   流萤:
     GPTPath: GPT_weights_v2/流萤-e10.ckpt
     SoVITSPath: SoVITS_weights_v2/流萤_e15_s810.pth
     bgPath: lib/bg/bgFireFly.png
     promptPath: lib/prompt/promptFireFly.txt
-    refaudioPath: lib/参考音频/因为你身上别着星穹列车的徽章呀，我在大银幕上见过！.wav
+    refaudioPath:
+      高兴: lib/参考音频/高兴/流萤_高兴.wav
+      悲伤: lib/参考音频/悲伤/流萤_悲伤.wav
+      愤怒: lib/参考音频/愤怒/流萤_愤怒.wav
+      惊讶: lib/参考音频/惊讶/流萤_惊讶.wav
+      恐惧: lib/参考音频/恐惧/流萤_恐惧.wav
+      厌恶: lib/参考音频/厌恶/流萤_厌恶.wav
+      中性: lib/参考音频/中性/流萤_中性.wav
+      害羞: lib/参考音频/害羞/流萤_害羞.wav
+      兴奋: lib/参考音频/兴奋/流萤_兴奋.wav
+      舒适: lib/参考音频/舒适/流萤_舒适.wav
+      紧张: lib/参考音频/紧张/流萤_紧张.wav
+      爱慕: lib/参考音频/爱慕/流萤_爱慕.wav
+      委屈: lib/参考音频/委屈/流萤_委屈.wav
+      骄傲: lib/参考音频/骄傲/流萤_骄傲.wav
+      困惑: lib/参考音频/困惑/流萤_困惑.wav
   潘兴:
     GPTPath: none
     SoVITSPath: none
     bgPath: lib/bg/bgPanxin.png
     promptPath: lib/prompt/promptPanxin.txt
-    refaudioPath: none
+    refaudioPath:
+      高兴: lib/参考音频/高兴/潘兴_高兴.wav
+      悲伤: lib/参考音频/悲伤/潘兴_悲伤.wav
+      愤怒: lib/参考音频/愤怒/潘兴_愤怒.wav
+      惊讶: lib/参考音频/惊讶/潘兴_惊讶.wav
+      恐惧: lib/参考音频/恐惧/潘兴_恐惧.wav
+      厌恶: lib/参考音频/厌恶/潘兴_厌恶.wav
+      中性: lib/参考音频/中性/潘兴_中性.wav
+      害羞: lib/参考音频/害羞/潘兴_害羞.wav
+      兴奋: lib/参考音频/兴奋/潘兴_兴奋.wav
+      舒适: lib/参考音频/舒适/潘兴_舒适.wav
+      紧张: lib/参考音频/紧张/潘兴_紧张.wav
+      爱慕: lib/参考音频/爱慕/潘兴_爱慕.wav
+      委屈: lib/参考音频/委屈/潘兴_委屈.wav
+      骄傲: lib/参考音频/骄傲/潘兴_骄傲.wav
+      困惑: lib/参考音频/困惑/潘兴_困惑.wav

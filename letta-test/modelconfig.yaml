@@ -1,0 +1,38 @@
+
+
+
+
+
+
+
+
+
+
+
+
+Agents:
+  银狼:
+    GPTPath: GPT_weights_v2/银狼-e10.ckpt
+    SoVITSPath: SoVITS_weights_v2/银狼_e15_s480.pth
+    bgPath: lib/bg/bgSilverWolf.png
+    promptPath: lib/prompt/promptSilverWolf.txt
+    refaudioPath: lib/参考音频/该做的事都做完了么？好，别睡下了才想起来日常没做，拜拜。.wav
+    
+  温迪:
+    GPTPath: GPT_weights_v2/温迪-e10.ckpt
+    SoVITSPath: SoVITS_weights_v2/温迪_e10_s1170.pth
+    bgPath: lib/bg/bgVenti.png
+    promptPath: lib/prompt/promptVenti.txt
+    refaudioPath: lib/参考音频/啊，是你呀！欸嘿，要出门么？带我一个呗。.wav
+  流萤:
+    GPTPath: GPT_weights_v2/流萤-e10.ckpt
+    SoVITSPath: SoVITS_weights_v2/流萤_e15_s810.pth
+    bgPath: lib/bg/bgFireFly.png
+    promptPath: lib/prompt/promptFireFly.txt
+    refaudioPath: lib/参考音频/因为你身上别着星穹列车的徽章呀，我在大银幕上见过！.wav
+  潘兴:
+    GPTPath: none
+    SoVITSPath: none
+    bgPath: lib/bg/bgPanxin.png
+    promptPath: lib/prompt/promptPanxin.txt
+    refaudioPath: none

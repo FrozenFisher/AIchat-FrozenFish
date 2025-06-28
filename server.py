@@ -15,6 +15,8 @@ import base64
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Queue
+import time
 
 import requests
 import tiktoken
@@ -23,6 +25,12 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import openai
+import simpleaudio as sa
+
+# BERT情感分析相关导入
+from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import pipeline
+import torch
 
 # 数据模型
 class ChatMessage(BaseModel):
@@ -45,7 +53,7 @@ class AgentConfig(BaseModel):
     sovits_path: str
     bg_path: str
     prompt_path: str
-    ref_audio_path: str
+    ref_audio_path: Dict[str, str]  # 修改为字典格式，支持多种情感
 
 class ModelConfig(BaseModel):
     gpt_weights: str
@@ -62,6 +70,20 @@ chat_sessions: Dict[str, List[ChatMessage]] = {}
 current_agent = "银狼"
 agent_configs: Dict[str, AgentConfig] = {}
 
+# 音频生成队列和锁（解决GPT-SoVITS并发问题）
+audio_generation_lock = threading.Lock()
+audio_generation_queue = Queue()
+
+# BERT情感分析相关全局变量
+bert_tokenizer = None
+bert_model = None
+sentiment_analyzer = None
+emotion_map = {
+    0: "高兴", 1: "悲伤", 2: "愤怒", 3: "惊讶", 4: "恐惧", 
+    5: "厌恶", 6: "中性", 7: "害羞", 8: "兴奋", 9: "舒适",
+    10: "紧张", 11: "爱慕", 12: "委屈", 13: "骄傲", 14: "困惑"
+}
+
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +92,59 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def load_bert_model():
+    """加载BERT情感分析模型"""
+    global bert_tokenizer, bert_model, sentiment_analyzer
+    
+    try:
+        model_path = "./lib/retrainedBERT"
+        if not os.path.exists(model_path):
+            print(f"❌ BERT模型路径不存在: {model_path}")
+            return False
+        
+        print(f"正在加载BERT模型: {model_path}")
+        bert_tokenizer = BertTokenizer.from_pretrained(model_path)
+        bert_model = BertForSequenceClassification.from_pretrained(model_path)
+        
+        # 创建情感分析pipeline
+        sentiment_analyzer = pipeline(
+            "text-classification",
+            model=bert_model,
+            tokenizer=bert_tokenizer,
+            framework="pt",
+            device="cuda" if torch.cuda.is_available() else "cpu"
+        )
+        
+        print(f"✅ BERT模型加载成功，使用设备: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ BERT模型加载失败: {e}")
+        return False
+
+def predict_emotion(text: str) -> str:
+    """预测文本情感，返回情感标签"""
+    global sentiment_analyzer, emotion_map
+    
+    if sentiment_analyzer is None:
+        print("BERT模型未加载，使用默认中性情感")
+        return "中性"
+    
+    try:
+        if not text.strip():
+            return "中性"
+        
+        result = sentiment_analyzer(text)
+        label = int(result[0]['label'].split('_')[-1])
+        emotion = emotion_map.get(label, "中性")
+        
+        print(f"情感分析: '{text[:50]}...' -> {emotion} (置信度: {result[0]['score']:.4f})")
+        return emotion
+        
+    except Exception as e:
+        print(f"情感分析失败: {e}")
+        return "中性"
 
 def load_config():
     """加载配置文件"""
@@ -87,7 +162,7 @@ def load_config():
             sovits_path=str(current_path.parent / "GPT-SoVITS" / agent_data["SoVITSPath"]),
             bg_path=str(current_path / agent_data["bgPath"]),
             prompt_path=str(current_path / agent_data["promptPath"]),
-            ref_audio_path=str(current_path / agent_data["refaudioPath"])
+            ref_audio_path=agent_data["refaudioPath"]  # 现在是字典格式
         )
 
 def init_ollama():
@@ -144,69 +219,92 @@ def get_ollama_client():
         "model": model_name
     }
 
-def count_tokens(messages: List[Dict]) -> int:
-    """计算消息的令牌数"""
-    encoding = tiktoken.get_encoding("cl100k_base")
-    token_count = 0
-    for message in messages:
-        token_count += len(encoding.encode(message["content"]))
-    return token_count
-
-def trim_history(messages: List[Dict], max_tokens: int = 32768) -> List[Dict]:
-    """截断对话历史以保持在令牌限制内"""
-    while count_tokens(messages) > max_tokens:
-        if len(messages) > 3:  # 保留系统消息和最近的对话
-            messages.pop(1)  # 删除除系统消息外最早的消息
-        else:
-            print("警告：系统消息过长")
-            break
-    return messages
-
-def split_text_for_audio(text: str) -> List[str]:
-    """将文本分割为适合音频生成的句子"""
+def split_text_for_audio(text: str) -> tuple[List[str], List[str]]:
+    """将文本分割为适合音频生成的句子
+    返回: (bert_sentences, audio_sentences)
+    bert_sentences: 包含圆括号内容的句子，用于BERT情感预测
+    audio_sentences: 去除圆括号内容的句子，用于音频生成
+    """
     # 过滤掉<think></think>标签及其内容
-    text_clean = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    # 去除圆括号中的内容
-    text_clean = re.sub(r'（.*?）|\(.*?\)', '', text_clean)
-    # 按标点符号分割
-    sentences = re.findall(r'[^,.!?;:，。！？：；]*[,.!?;:，。！？：；]*', text_clean)
-    return [s.strip() for s in sentences if s.strip()]
+    text_without_think = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # 先按标点分句，保留括号内容（添加~作为句子结束符）
+    bert_sentences = re.findall(r'[^.!?;:。！？：；~]*[.!?;:。！？：；~]+', text_without_think)
+    bert_sentences = [s.strip() for s in bert_sentences if s.strip()]
+    # 对每个句子分别去除括号内容
+    audio_sentences = [re.sub(r'（.*?）|\(.*?\)', '', s).strip() for s in bert_sentences]
+    return bert_sentences, audio_sentences
 
 async def generate_audio_segments(text: str, agent: str) -> List[str]:
     """生成音频片段，返回base64编码的音频数据列表"""
     agent_config = agent_configs.get(agent)
-    if not agent_config or agent_config.ref_audio_path == "none":
+    if not agent_config or not agent_config.ref_audio_path:
         return []
     
-    sentences = split_text_for_audio(text)
+    bert_sentences, audio_sentences = split_text_for_audio(text)
     audio_data_list = []
     
-    # 获取参考音频的文本
-    ref_audio_name = Path(agent_config.ref_audio_path).stem
+    # 确保两个列表长度一致
+    if len(bert_sentences) != len(audio_sentences):
+        print(f"警告：BERT句子数量({len(bert_sentences)})与音频句子数量({len(audio_sentences)})不匹配")
+        return []
     
-    for i, sentence in enumerate(sentences):
+    for i, (bert_sentence, audio_sentence) in enumerate(zip(bert_sentences, audio_sentences)):
         try:
-            # 调用GPT-SoVITS API
-            tts_url = "http://127.0.0.1:9880/tts"
-            post_data = {
-                "prompt_text": ref_audio_name,
-                "prompt_lang": "zh",
-                "ref_audio_path": agent_config.ref_audio_path,
-                "text": sentence,
-                "text_lang": "zh",
-            }
+            # 使用BERT模型预测情感（使用包含圆括号内容的句子）
+            emotion = predict_emotion(bert_sentence)
+            print(f"句子 {i+1}: BERT输入 '{bert_sentence}' -> 情感: {emotion}")
+            print(f"句子 {i+1}: 音频输入 '{audio_sentence}'")
             
-            response = requests.post(tts_url, json=post_data)
-            if response.status_code == 200:
-                # 将音频数据编码为base64字符串
-                audio_base64 = base64.b64encode(response.content).decode('utf-8')
-                audio_data_list.append(audio_base64)
-                print(f"生成音频: {sentence}")
-            else:
-                print(f"音频生成失败: {response.status_code}")
+            # 根据情感选择对应的参考音频
+            ref_audio_path = agent_config.ref_audio_path.get(emotion)
+            if not ref_audio_path:
+                print(f"未找到情感 '{emotion}' 的参考音频，使用中性音频")
+                ref_audio_path = agent_config.ref_audio_path.get("中性")
+            
+            if not ref_audio_path or not os.path.exists(ref_audio_path):
+                print(f"参考音频不存在: {ref_audio_path}")
+                continue
+            
+            # 获取参考音频的文本（从文件名提取）
+            ref_audio_name = Path(ref_audio_path).stem
+            current_path = Path(__file__).parent
+            
+            # 使用锁确保GPT-SoVITS API调用是串行的
+            try:
+                with audio_generation_lock:
+                    print(f"🔒 获取音频生成锁，开始生成第 {i+1} 个音频...")
+                    
+                    # 调用GPT-SoVITS API（使用去除圆括号内容的句子）
+                    tts_url = "http://127.0.0.1:9880/tts"
+                    post_data = {
+                        "prompt_text": ref_audio_name,
+                        "prompt_lang": "zh",
+                        "ref_audio_path": str(current_path / ref_audio_path),
+                        "text": audio_sentence,
+                        "text_lang": "zh",
+                        "parallel_infer": True,  # 启用并行推理
+                    }
+                    
+                    response = requests.post(tts_url, json=post_data)
+                    if response.status_code == 200:
+                        # 将音频数据编码为base64字符串
+                        audio_base64 = base64.b64encode(response.content).decode('utf-8')
+                        audio_data_list.append(audio_base64)
+                        print(f"✅ 生成音频: {audio_sentence} (情感: {emotion})")
+                    else:
+                        print(f"❌ 音频生成失败: {response.status_code}")
+                        print(f"   错误信息: {response.text}")
+                    
+                    print(f"🔓 释放音频生成锁，第 {i+1} 个音频生成完成")
+            except Exception as lock_error:
+                print(f"❌ 音频生成锁错误: {lock_error}")
+                # 确保锁被释放
+                if audio_generation_lock.locked():
+                    audio_generation_lock.release()
+                    print("🔓 强制释放音频生成锁")
                 
         except Exception as e:
-            print(f"音频生成错误: {e}")
+            print(f"❌ 音频生成错误: {e}")
     
     return audio_data_list
 
@@ -280,6 +378,13 @@ async def startup_event():
     load_config()
     init_ollama()
     init_deepseek()
+    
+    # 加载BERT情感分析模型
+    bert_loaded = load_bert_model()
+    if bert_loaded:
+        print("✅ BERT情感分析模型加载成功")
+    else:
+        print("⚠️ BERT情感分析模型加载失败，将使用默认中性情感")
     
     # 根据环境变量设置在线模式
     online_mode = os.getenv("ONLINE_MODE", "false").lower() == "true"
@@ -385,7 +490,6 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     # 构建消息列表
     messages = [{"role": msg.role, "content": msg.content} 
                for msg in chat_sessions[session_id]]
-    messages = trim_history(messages)
     
     try:
         # 调用Ollama API
@@ -573,6 +677,28 @@ async def get_mode():
     mode = "online" if online_mode else "offline"
     framework = "DeepSeek API" if online_mode else "Ollama"
     return {"mode": mode, "framework": framework}
+
+@app.post("/emotion/analyze")
+async def analyze_emotion(text: str):
+    """分析文本情感"""
+    try:
+        emotion = predict_emotion(text)
+        return {
+            "text": text,
+            "emotion": emotion,
+            "message": "情感分析完成"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"情感分析失败: {str(e)}")
+
+@app.get("/emotion/status")
+async def get_emotion_status():
+    """获取情感分析模型状态"""
+    return {
+        "bert_loaded": sentiment_analyzer is not None,
+        "device": "CUDA" if torch.cuda.is_available() else "CPU",
+        "available_emotions": list(emotion_map.values())
+    }
 
 if __name__ == "__main__":
     import uvicorn

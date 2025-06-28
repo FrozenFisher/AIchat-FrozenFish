@@ -1,0 +1,13 @@
+# BERT情感分析项目依赖项
+
+# 核心依赖
+torch>=1.9.0
+transformers>=4.20.0
+datasets>=2.0.0
+
+# 数据处理
+numpy>=1.21.0
+scikit-learn>=1.0.0
+
+# 其他工具
+tqdm>=4.60.0 

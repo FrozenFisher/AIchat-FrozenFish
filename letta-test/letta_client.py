@@ -1,6 +1,6 @@
 """
-AI聊天客户端 - 只负责UI交互和音频播放
-通过RESTful API与server通信
+AI聊天客户端 - 基于Letta重构
+只负责UI交互和音频播放，通过RESTful API与letta_server通信
 """
 
 import os
@@ -26,8 +26,8 @@ current_path = Path(__file__).parent
 session_id = str(uuid.uuid4())
 current_agent = "银狼"
 
-class ChatClient:
-    """聊天客户端API封装"""
+class LettaChatClient:
+    """Letta聊天客户端API封装"""
     
     def __init__(self, server_url: str):
         self.server_url = server_url
@@ -107,18 +107,35 @@ class ChatClient:
             print(f"发送消息失败: {e}")
             return None
     
-    def get_audio(self, filename: str) -> Optional[bytes]:
-        """获取音频文件 - 已废弃"""
-        print("警告: get_audio方法已废弃，音频数据现在直接包含在聊天响应中")
-        return None
+    def get_letta_agents(self) -> Optional[Dict]:
+        """获取Letta Agents列表"""
+        try:
+            response = requests.get(f"{self.server_url}/letta/agents")
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"获取Letta Agents失败: {e}")
+            return None
+    
+    def get_letta_health(self) -> Optional[Dict]:
+        """获取Letta服务状态"""
+        try:
+            response = requests.get(f"{self.server_url}/letta/health")
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"获取Letta健康状态失败: {e}")
+            return None
 
 
-class FloatingWindow(QtWidgets.QWidget):
-    """主聊天窗口"""
+class LettaFloatingWindow(QtWidgets.QWidget):
+    """主聊天窗口 (Letta版)"""
 
     def __init__(self):
         super().__init__()
-        self.chat_client = ChatClient(SERVER_URL)
+        self.chat_client = LettaChatClient(SERVER_URL)
         self.current_agent = "银狼"
         self.agent_configs = {}
         self.is_initialized = False
@@ -138,7 +155,7 @@ class FloatingWindow(QtWidgets.QWidget):
     
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("AI聊天")
+        self.setWindowTitle("AI聊天 (Letta版)")
         self.setFixedSize(600, 400)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
@@ -206,7 +223,7 @@ class FloatingWindow(QtWidgets.QWidget):
 
     def load_agents(self):
         """加载角色列表"""
-        print("🔄 开始加载角色配置...")
+        print("🔄 开始加载角色配置 (Letta版)...")
         agents = self.chat_client.get_agents()
         print(f"📋 获取到角色列表: {agents}")
         
@@ -219,23 +236,30 @@ class FloatingWindow(QtWidgets.QWidget):
                 print(f"   背景路径: {config.get('bg_path', 'N/A')}")
                 print(f"   GPT路径: {config.get('gpt_path', 'N/A')}")
                 print(f"   SoVITS路径: {config.get('sovits_path', 'N/A')}")
+                print(f"   Letta Agent ID: {config.get('letta_agent_id', 'N/A')}")
             else:
                 print(f"❌ 角色 {agent} 配置加载失败")
         
         print(f"📊 总共加载了 {len(self.agent_configs)} 个角色配置")
+        
+        # 检查Letta服务状态
+        health = self.chat_client.get_letta_health()
+        if health:
+            print(f"🔍 Letta服务状态: {health.get('status', 'unknown')}")
+        else:
+            print("❌ 无法获取Letta服务状态")
     
     def initialize_current_agent(self):
         """初始化当前角色"""
         if not self.is_initialized:
-            self.textArea.append("🔄 正在初始化角色...")
+            self.textArea.append("🔄 正在初始化角色 (Letta版)...")
             
             def init_thread():
                 try:
                     # 获取角色提示词
                     prompt_info = self.chat_client.get_agent_prompt(self.current_agent)
-                    # 不再显示提示词内容到UI
-                    # if prompt_info and prompt_info.get("prompt"):
-                    #     self.textArea.append(f"📝 角色提示词: {prompt_info['prompt'][:100]}...")
+                    if prompt_info and prompt_info.get("prompt"):
+                        self.textArea.append(f"📝 角色提示词: {prompt_info['prompt'][:100]}...")
                     
                     # 初始化角色会话
                     init_result = self.chat_client.init_agent_session(self.current_agent)
@@ -482,11 +506,12 @@ class FloatingWindow(QtWidgets.QWidget):
     def showSettings(self, event):
         """显示设置窗口"""
         self.wheshowSet = True
-        self.setting_window = SettingWindow(self)
+        self.setting_window = LettaSettingWindow(self)
         self.setting_window.show()
 
-class SettingWindow(QtWidgets.QWidget):
-    """设置窗口"""
+
+class LettaSettingWindow(QtWidgets.QWidget):
+    """设置窗口 (Letta版)"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -496,29 +521,29 @@ class SettingWindow(QtWidgets.QWidget):
         self.setFixedSize(600, 400)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-
+        
         # 背景
         self.settingbg = QtWidgets.QLabel(self)
         settingbg_path = current_path / "lib" / "settingbg.png"
         if settingbg_path.exists():
             settingbg = QtGui.QPixmap(str(settingbg_path)).scaled(600, 400, QtCore.Qt.KeepAspectRatio)
-        self.settingbg.setPixmap(settingbg)
+            self.settingbg.setPixmap(settingbg)
         self.settingbg.setGeometry(0, 0, 600, 400)
-
+        
         # 布局
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-
+        
         # 标题
         self.top_layout = QtWidgets.QHBoxLayout()
         self.top_layout.setContentsMargins(0, 20, 20, 0)
         self.top_layout.addStretch()
         
-        self.label = QtWidgets.QLabel("设置-切换模型")
+        self.label = QtWidgets.QLabel("设置-切换模型 (Letta版)")
         self.label.setStyleSheet("color: black; font-family: Unifont; font-size: 15pt;")
         self.top_layout.addWidget(self.label)
         self.layout.addLayout(self.top_layout)
-
+        
         # 角色选择
         self.left_layout = QtWidgets.QVBoxLayout()
         self.left_layout.setContentsMargins(40, 0, 40, 0)
@@ -528,7 +553,7 @@ class SettingWindow(QtWidgets.QWidget):
         self.agent_combo.setCurrentText(self.parent_window.current_agent)
         self.agent_combo.currentTextChanged.connect(self.on_agent_changed)
         self.left_layout.addWidget(self.agent_combo)
-
+        
         # 配置显示
         self.config_labels = {}
         config_fields = [
@@ -536,7 +561,8 @@ class SettingWindow(QtWidgets.QWidget):
             ("sovits_path", "SoVITS模型路径"),
             ("bg_path", "背景路径"),
             ("prompt_path", "Prompt路径"),
-            ("ref_audio_path", "参考音频路径")
+            ("ref_audio_path", "参考音频路径"),
+            ("letta_agent_id", "Letta Agent ID")
         ]
         
         for field, title in config_fields:
@@ -548,10 +574,10 @@ class SettingWindow(QtWidgets.QWidget):
             value_edit.setReadOnly(True)
             self.left_layout.addWidget(value_edit)
             self.config_labels[field] = value_edit
-
+        
         self.layout.addLayout(self.left_layout)
         self.layout.addStretch()
-
+        
         # 按钮
         self.bottom_layout = QtWidgets.QHBoxLayout()
         self.bottom_layout.setContentsMargins(0, 0, 20, 20)
@@ -566,10 +592,10 @@ class SettingWindow(QtWidgets.QWidget):
         self.bottom_layout.addWidget(self.close_button)
         
         self.layout.addLayout(self.bottom_layout)
-
+        
         # 更新配置显示
         self.update_config_display()
-
+    
     def update_config_display(self):
         """更新配置显示"""
         current_agent = self.agent_combo.currentText()
@@ -590,7 +616,7 @@ class SettingWindow(QtWidgets.QWidget):
             # 清空所有字段
             for edit in self.config_labels.values():
                 edit.setText("")
-
+    
     def on_agent_changed(self, agent_name):
         """角色改变事件"""
         self.update_config_display()
@@ -617,18 +643,26 @@ class SettingWindow(QtWidgets.QWidget):
         self.parent_window.wheshowSet = False
         self.deleteLater()
 
+
 def main():
     """主函数"""
     app = QtWidgets.QApplication(sys.argv)
-    window = FloatingWindow()
+    window = LettaFloatingWindow()
     window.show()
-
+    
     # 清理函数
     def cleanup():
-        window.audio_player.stop()
-
+        # 清理临时文件
+        temp_dir = current_path / "temp"
+        if temp_dir.exists():
+            for file in temp_dir.glob("*.wav"):
+                try:
+                    file.unlink()
+                except:
+                    pass
+    
     app.aboutToQuit.connect(cleanup)
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    main()
+    main() 
